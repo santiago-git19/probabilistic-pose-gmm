@@ -1,0 +1,77 @@
+# Hydra Configuration for Robust Pose Estimation with TTA
+# Based on structured configuration pattern for reproducible research
+
+defaults:
+  - model: rtmpose_m  # Can be overridden: rtmpose_s, vitpose_b, etc.
+  - tta: default
+  - _self_
+
+# Random seed for reproducibility
+seed: 42
+
+# Model configuration
+model:
+  type: mmpose  # Framework: mmpose, detectron2, etc.
+  checkpoint_path: ???  # Must be provided
+  device: cuda
+  input_size: [256, 192]  # [H, W]
+
+# Test-Time Adaptation parameters
+tta:
+  # Augmentation strategy
+  enabled: true
+  num_augmentations: 8
+  augmentation_types:
+    - horizontal_flip
+    - rotation
+    - scale
+  
+  # Rotation parameters (degrees)
+  rotation_range: [-15, 15]
+  
+  # Scale parameters (multiplicative factors)
+  scale_range: [0.85, 1.15]
+  
+  # Aggregation method for heatmaps
+  aggregation: mean  # mean, median, weighted_mean
+
+# Mathematical Core Configuration
+math_core:
+  # Restricted Gaussian Mixture parameters
+  mixture:
+    n_components: 2  # Binary mixture for limb swap detection
+    shared_covariance: true  # Key constraint: Σ₁ = Σ₂
+    covariance_type: full  # full, tied, diag, spherical
+    convergence_threshold: 1e-4
+    max_iterations: 100
+    regularization: 1e-6  # For numerical stability
+  
+  # Monte Carlo Sampling parameters
+  sampling:
+    n_samples: 500  # Number of samples per keypoint
+    sampling_strategy: importance  # importance, uniform, stratified
+    temperature: 1.0  # Softmax temperature for heatmap sampling
+  
+  # Outlier detection
+  outlier:
+    enabled: true
+    method: mahalanobis  # mahalanobis, z_score, isolation_forest
+    threshold: 3.0  # Standard deviations for Mahalanobis distance
+
+# Post-processing
+postprocess:
+  use_dark: true  # Distribution-Aware coordinate Representation of Keypoints
+  min_confidence: 0.3
+  nms_threshold: 0.5
+
+# Evaluation metrics
+metrics:
+  - oks  # Object Keypoint Similarity
+  - pck  # Percentage of Correct Keypoints
+  - auc  # Area Under Curve
+
+# Logging
+logging:
+  level: INFO
+  save_visualizations: true
+  output_dir: outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}

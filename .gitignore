@@ -1,0 +1,23 @@
+# .gitignore
+
+# Python & Build
+__pycache__/
+*.py[cod]
+.venv/
+dist/
+
+# IDEs
+.vscode/
+.idea/
+
+# Environment variables
+.env
+
+# Data & Models (NUNCA subir datasets ni pesos pesados a git)
+data/
+outputs/
+*.pth
+*.ckpt
+
+# Project specifics
+wandb/
