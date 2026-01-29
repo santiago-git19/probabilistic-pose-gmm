@@ -9,6 +9,14 @@ defaults:
 # Random seed for reproducibility
 seed: 42
 
+# Dataset configuration
+dataset:
+  name: "coco"
+  root_dir: "${hydra:runtime.cwd}/data/coco" # Usa ruta absoluta dinámica
+  # Archivos específicos relativos a root_dir
+  annotations: "annotations/person_keypoints_val2017.json"
+  images: "val2017"
+
 # Model configuration
 model:
   type: mmpose  # Framework: mmpose, detectron2, etc.
