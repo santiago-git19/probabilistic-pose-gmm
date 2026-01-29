@@ -177,12 +177,10 @@ MIT License - see [LICENSE](LICENSE) file for details.
 ## 🙏 Acknowledgments
 
 - OpenMMLab for MMPose framework
-- ETH Zürich Computer Vision Lab
 - CVIU paper authors for mathematical foundation
 
 ## 📧 Contact
 
-- **Maintainer**: ETH Zürich Research Team
 - **Issues**: [GitHub Issues](https://github.com/eth-zurich/robust-pose-tta/issues)
 - **Email**: pose-uncertainty@ethz.ch
 
