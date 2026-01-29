@@ -19,6 +19,33 @@ import numpy as np
 import numpy.typing as npt
 
 
+from dataclasses import dataclass
+import numpy as np
+from typing import List, Optional, Tuple
+
+@dataclass
+class Keypoint:
+    """Representación agnóstica de un punto clave."""
+    id: int
+    x: float
+    y: float
+    confidence: float  # Visibilidad o confianza del ground truth
+    name: str          # Ej: "left_elbow"
+
+@dataclass
+class ImageSample:
+    """
+    DTO (Data Transfer Object) que viaja por tu pipeline.
+    Tu 'Core Math' recibirá esto, sin importar si vino de COCO o CrowdPose.
+    """
+    image_id: int or str
+    image_path: str
+    image_array: np.ndarray        # Imagen RGB (H, W, 3)
+    bbox: Tuple[float, float, float, float] # (x, y, w, h)
+    ground_truth_keypoints: Optional[List[Keypoint]] = None
+    dataset_source: str = "coco"   # Metadato para trazabilidad
+
+
 @dataclass(frozen=True)
 class StandardizedHeatmap:
     """
