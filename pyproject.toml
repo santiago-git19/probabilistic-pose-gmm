@@ -22,6 +22,7 @@ wheel = "^0.46.3"
 setuptools = "<70.0.0" 
 mmpose = {path = "models/mmpose", develop = true}
 pip = "^26.0"
+mmpretrain = "1.2.0"
 
 
 [tool.poetry.group.dev.dependencies]
