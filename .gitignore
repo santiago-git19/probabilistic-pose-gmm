@@ -16,6 +16,7 @@ dist/
 # Data & Models (NUNCA subir datasets ni pesos pesados a git)
 data/
 outputs/
+models/
 *.pth
 *.ckpt
 

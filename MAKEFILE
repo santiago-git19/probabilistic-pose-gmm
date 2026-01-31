@@ -1,0 +1,11 @@
+.PHONY: setup-models clean
+
+# Descarga los modelos y clona dependencias
+setup-models:
+	@chmod +x scripts/setup_models.sh
+	@bash scripts/setup_models.sh
+
+# Ejemplo de limpieza (opcional)
+clean:
+	rm -rf outputs/
+	find . -type d -name "__pycache__" -exec rm -rf {} +
