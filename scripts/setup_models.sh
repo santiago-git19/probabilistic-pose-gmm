@@ -28,6 +28,9 @@ if [ -d "$REPO_DIR" ]; then
 else
     echo "[1/4] Clonando MMPose (depth=1)..."
     git clone --depth 1 https://github.com/open-mmlab/mmpose.git $REPO_DIR
+
+    echo "[INFO] Aplicando parche de ingeniería a setup.py..."
+    python scripts/patch_mmpose.py
 fi
 
 # 2. DESCARGAR MODELOS (WGET)

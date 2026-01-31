@@ -1,10 +1,26 @@
-.PHONY: setup-models clean
+.PHONY: setup-models install clean check
 
-# Descarga los modelos y clona dependencias
+# 1. Descarga modelos y parchea MMPose
 setup-models:
 	@chmod +x scripts/setup_models.sh
 	@bash scripts/setup_models.sh
 
+# 2. Instalación Robusta (El comando mágico)
+install:
+	@echo "🔧 Instalando dependencias críticas pre-Poetry..."
+	@# Actualizamos pip y herramientas de construcción
+	poetry run pip install --upgrade pip setuptools wheel
+	
+	@# Instalamos Chumpy saltándonos las reglas de aislamiento
+	poetry run pip install chumpy --no-build-isolation
+	
+	@# Ahora dejamos que Poetry instale el resto limpiamente
+	@echo "📦 Instalando entorno con Poetry..."
+	poetry install
+	
+	@# Finalmente instalamos MMPose en modo editable (si no está ya)
+	poetry run pip install -e models/mmpose --no-build-isolation
+	
 # Ejemplo de limpieza (opcional)
 clean:
 	rm -rf outputs/
