@@ -1,4 +1,4 @@
-# scripts/patch_mmpose.py
+# scripts/models_installation/patch_mmpose.py
 import os
 
 def patch_setup_py():

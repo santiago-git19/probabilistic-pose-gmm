@@ -1,27 +1,38 @@
-.PHONY: setup-models install clean check
+.PHONY: setup-models install check clean
 
-# 1. Descarga modelos y parchea MMPose
 setup-models:
-	@chmod +x scripts/setup_models.sh
-	@bash scripts/setup_models.sh
+	@echo "--- [1/3] Configurando Modelos y Pesos ---"
+	@chmod +x scripts/models_installation/setup_models.sh
+	@bash scripts/models_installation/setup_models.sh
 
-# 2. Instalación Robusta (El comando mágico)
 install:
-	@echo "🔧 Instalando dependencias críticas pre-Poetry..."
-	@# Actualizamos pip y herramientas de construcción
+	@echo "--- [2/3] Instalando Entorno Python (Modo Robusto) ---"
+	
+	@# [A] Actualizar herramientas
+	@echo " -> [A] Actualizando pip, setuptools y wheel..."
 	poetry run pip install --upgrade pip setuptools wheel
 	
-	@# Instalamos Chumpy saltándonos las reglas de aislamiento
-	poetry run pip install chumpy --no-build-isolation
+	@# [B] Fix Chumpy
+	@echo " -> [B] Parcheando librería legacy: chumpy..."
+	poetry run pip install chumpy==0.70 --no-build-isolation
 	
-	@# Ahora dejamos que Poetry instale el resto limpiamente
-	@echo "📦 Instalando entorno con Poetry..."
+	@# [C] Instalar Core OpenMMLab (VERSIONES PINNEADAS)
+	@# Usamos mmcv 2.1.0 y mmdet 3.2.0 para satisfacer las restricciones de MMPose 1.3.2
+	@echo " -> [C] Instalando Motores OpenMMLab (Versiones Golden)..."
+	poetry run mim install "mmcv==2.1.0" "mmdet==3.2.0"
+	
+	@# [D] Dependencias Poetry
+	@echo " -> [D] Instalando resto de dependencias con Poetry..."
 	poetry install
 	
-	@# Finalmente instalamos MMPose en modo editable (si no está ya)
+	@# [E] MMPose Local
+	@echo " -> [E] Instalando MMPose local..."
 	poetry run pip install -e models/mmpose --no-build-isolation
-	
-# Ejemplo de limpieza (opcional)
+
+check:
+	@echo "--- [3/3] Verificando Salud del Entorno ---"
+	poetry run python src/tests/check_env.py
+
 clean:
 	rm -rf outputs/
 	find . -type d -name "__pycache__" -exec rm -rf {} +
