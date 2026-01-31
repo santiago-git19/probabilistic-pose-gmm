@@ -23,6 +23,13 @@ dataset:
   # dataset.root_dir="${hydra:runtime.cwd}/data/crowdpose"
   # dataset.annotations="json/crowdpose_val.json"
   # dataset.images="images"
+  
+  # Alternative: OCHuman dataset configuration
+  # To use OCHuman, override with:
+  # dataset.name=ochuman
+  # dataset.root_dir="${hydra:runtime.cwd}/data/ochuman"
+  # dataset.annotations="annotations/ochuman_coco_format_val_range_0.00_1.00.json"
+  # dataset.images="images"
 
 # Model configuration
 model:
