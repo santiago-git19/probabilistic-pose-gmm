@@ -19,14 +19,13 @@ MODELS = {
     },
     "ViTPose-Base": {
         "mirrors": [
-            # MIRROR 1: WritingMinds (HuggingFace público, suele funcionar)
-            "https://huggingface.co/WritingMinds/ViTPose-Single-Person/resolve/main/vitpose_base_coco_256x192.pth",
-            # MIRROR 2: Kisto (Backup)
-            "https://huggingface.co/Kisto/ViTPose/resolve/main/vitpose_base_coco_256x192.pth"
+
+            # MIRROR 2:¡
+            "https://download.openmmlab.com/mmpose/v1/body_2d_keypoint/topdown_heatmap/coco/td-hm_ViTPose-small_8xb64-210e_coco-256x192-62d7a712_20230314.pth"
         ],
-        "path": "models/weights/vitpose_base.pth",
+        "path": "models/weights/vitpose_small_mmpose.pth",
         # Si todo falla, mostramos este mensaje
-        "manual_url": "https://1drv.ms/u/s!AimBgYV7JjTlgccgb_50jIgiYkHvdw?e=D7RbH2" 
+        "manual_url": "https://download.openmmlab.com/mmpose/v1/body_2d_keypoint/topdown_heatmap/coco/td-hm_ViTPose-small_8xb64-210e_coco-256x192-62d7a712_20230314.pth" 
     }
 }
 
