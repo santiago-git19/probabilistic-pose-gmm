@@ -122,3 +122,110 @@ class COCOLoader(PoseDatasetAdapter):
                 ground_truth_keypoints=self._parse_keypoints(main_person['keypoints'], num_keypoints=17),
                 dataset_source="coco"
             )
+
+class CrowdPoseLoader(PoseDatasetAdapter):
+    def __init__(self, data_root: str, ann_file: str, image_dir: str):
+        """
+        Loader for CrowdPose dataset.
+        
+        :param data_root: Base path (e.g., ./data/crowdpose)
+        :param ann_file: Annotation JSON file (e.g., json/crowdpose_val.json)
+        :param image_dir: Image directory (e.g., images)
+        """
+        self.data_root = data_root
+        self.image_dir = os.path.join(data_root, image_dir)
+        self.ann_path = os.path.join(data_root, ann_file)
+        
+        # Load CrowdPose annotations (COCO format compatible)
+        print(f"Cargando anotaciones desde {self.ann_path}...")
+        self.coco = COCO(self.ann_path)
+        
+        # Filter only 'person' category images
+        self.cat_ids = self.coco.getCatIds(catNms=['person'])
+        self.img_ids = self.coco.getImgIds(catIds=self.cat_ids)
+        print(f"Dataset cargado: {len(self.img_ids)} imágenes encontradas.")
+
+    def __len__(self) -> int:
+        return len(self.img_ids)
+
+    def _parse_keypoints(self, raw_kps: List[float], num_keypoints: int) -> List[Keypoint]:
+        """
+        Convert CrowdPose's flat keypoint format to List[Keypoint].
+        
+        CrowdPose Format: [x1, y1, v1, x2, y2, v2, ..., x14, y14, v14]
+        
+        Args:
+            raw_kps: Flat list of keypoint data (length 42 for CrowdPose: 14 * 3).
+            num_keypoints: Number of labeled keypoints (for validation).
+        
+        Returns:
+            List of Keypoint objects with proper naming and confidence.
+        
+        Confidence Mapping:
+            v=0 → confidence=0.0 (not labeled)
+            v=1 → confidence=0.5 (occluded, exists but not visible)
+            v=2 → confidence=1.0 (visible)
+        """
+        CROWDPOSE_KEYPOINT_NAMES = [
+            "left_shoulder", "right_shoulder", "left_elbow", "right_elbow",
+            "left_wrist", "right_wrist", "left_hip", "right_hip",
+            "left_knee", "right_knee", "left_ankle", "right_ankle",
+            "head", "neck"
+        ]
+        
+        keypoints = []
+        
+        # CrowdPose has 14 keypoints, stored as triplets (x, y, visibility)
+        for i in range(14):
+            idx = i * 3
+            x = raw_kps[idx]
+            y = raw_kps[idx + 1]
+            v = int(raw_kps[idx + 2])
+            
+            # Map visibility to confidence
+            confidence_map = {0: 0.0, 1: 0.5, 2: 1.0}
+            confidence = confidence_map.get(v, 0.0)
+            
+            keypoints.append(Keypoint(
+                id=i,
+                x=float(x),
+                y=float(y),
+                confidence=confidence,
+                name=CROWDPOSE_KEYPOINT_NAMES[i]
+            ))
+        
+        return keypoints
+
+    def __iter__(self) -> Iterator[ImageSample]:
+        for img_id in self.img_ids:
+            # Image metadata
+            img_info = self.coco.loadImgs(img_id)[0]
+            path = os.path.join(self.image_dir, img_info['file_name'])
+            
+            # Load Annotations (Bbox and Keypoints)
+            ann_ids = self.coco.getAnnIds(imgIds=img_id, catIds=self.cat_ids, iscrowd=False)
+            anns = self.coco.loadAnns(ann_ids)
+            
+            # CrowdPose has multiple people per image.
+            # For single-person pipeline, select the largest person (by bbox area).
+            if not anns: 
+                continue
+            
+            # Calculate area from bbox [x, y, w, h] since 'area' field doesn't exist
+            main_person = max(anns, key=lambda x: x['bbox'][2] * x['bbox'][3])
+            bbox = main_person['bbox']  # [x, y, w, h]
+            
+            # Lazy loading: Load image only when needed
+            img_array = cv2.imread(path)
+            if img_array is None:
+                continue  # Skip if image is corrupted
+            img_array = cv2.cvtColor(img_array, cv2.COLOR_BGR2RGB)
+
+            yield ImageSample(
+                image_id=img_id,
+                image_path=path,
+                image_array=img_array,
+                bbox=tuple(bbox),
+                ground_truth_keypoints=self._parse_keypoints(main_person['keypoints'], num_keypoints=14),
+                dataset_source="crowdpose"
+            )
