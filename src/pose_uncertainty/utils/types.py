@@ -69,6 +69,8 @@ class StandardizedHeatmap:
                        Some models provide this separately from heatmaps.
         scale_factor: Ratio between heatmap resolution and original image.
         offset: Spatial offset applied during preprocessing (for padding).
+        reconstructed: Boolean indicating if the heatmap was reconstructed
+            (True) or obtained directly from the model (False).
     
     Invariants:
         - data.ndim == 3
@@ -80,11 +82,13 @@ class StandardizedHeatmap:
     confidence_map: Optional[npt.NDArray[np.float32]] = None
     scale_factor: float = 1.0
     offset: Tuple[float, float] = (0.0, 0.0)
+    reconstructed: bool = False
     
     def __post_init__(self) -> None:
         """Validate data integrity."""
         assert self.data.ndim == 3, f"Expected 3D heatmap, got shape {self.data.shape}"
         assert len(self.original_size) == 2, "original_size must be (height, width)"
+        assert np.all((self.data >= 0) & (self.data <= 1)), "Heatmap values must be in [0, 1]"
         ...
 
 
