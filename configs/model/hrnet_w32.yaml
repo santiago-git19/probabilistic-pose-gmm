@@ -1,0 +1,36 @@
+# HRNet-W32 Model Configuration
+# High-Resolution Network - Best balance of accuracy and speed
+
+# Model identifier (matches MMPoseAdapter.MODEL_REGISTRY)
+name: hrnet_w32
+
+# Framework to use
+framework: mmpose
+
+# MMPose config path (relative to mmpose/configs/)
+config_path: body_2d_keypoint/topdown_heatmap/coco/td-hm_hrnet-w32_8xb64-210e_coco-256x192.py
+
+# Checkpoint filename (in models/weights/)
+checkpoint: hrnet_w32.pth
+
+# Model input size [H, W]
+input_size: [256, 192]
+
+# Number of keypoints (COCO format)
+num_keypoints: 17
+
+# Device configuration
+device: ${oc.env:CUDA_VISIBLE_DEVICES,cuda}
+
+# Model-specific preprocessing
+preprocessing:
+  mean: [0.485, 0.456, 0.406]  # ImageNet normalization
+  std: [0.229, 0.224, 0.225]
+  
+# Model characteristics (for documentation)
+metadata:
+  description: "HRNet-W32 for COCO 2D pose estimation"
+  accuracy_ap: 74.4  # COCO val2017 AP
+  params_millions: 28.5
+  flops_gflops: 7.1
+  inference_fps: 45  # Approximate on RTX 3080

@@ -20,5 +20,8 @@ models/
 *.pth
 *.ckpt
 
+# AI-generated documents 
+docs/
+
 # Project specifics
 wandb/

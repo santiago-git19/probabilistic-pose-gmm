@@ -2,17 +2,25 @@
 # Based on structured configuration pattern for reproducible research
 
 defaults:
-  - model: rtmpose_m  # Can be overridden: rtmpose_s, vitpose_b, etc.
+  - model: hrnet_w32  # Can be overridden: resnet50, vitpose_small, etc.
   - tta: default
   - _self_
 
 # Random seed for reproducibility
 seed: 42
 
+# Project paths (resolved at runtime)
+paths:
+  project_root: ${hydra:runtime.cwd}
+  models_dir: ${paths.project_root}/models
+  weights_dir: ${paths.models_dir}/weights
+  mmpose_root: ${paths.models_dir}/mmpose
+  outputs_dir: ${paths.project_root}/outputs
+
 # Dataset configuration
 dataset:
   name: "coco"
-  root_dir: "${hydra:runtime.cwd}/data/coco" # Usa ruta absoluta dinámica
+  root_dir: "${paths.project_root}/data/coco"
   # Archivos específicos relativos a root_dir
   annotations: "annotations/person_keypoints_val2017.json"
   images: "val2017"

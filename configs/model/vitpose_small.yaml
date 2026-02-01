@@ -1,0 +1,40 @@
+# ViTPose-Small Model Configuration
+# Vision Transformer-based pose estimation - State-of-the-art
+
+# Model identifier (matches MMPoseAdapter.MODEL_REGISTRY)
+name: vitpose_small
+
+# Framework to use
+framework: mmpose
+
+# MMPose config path (relative to mmpose/configs/)
+config_path: body_2d_keypoint/topdown_heatmap/coco/td-hm_ViTPose-small_8xb64-210e_coco-256x192.py
+
+# Checkpoint filename (in models/weights/)
+checkpoint: vitpose_small_mmpose.pth
+
+# Model input size [H, W]
+input_size: [256, 192]
+
+# Number of keypoints (COCO format)
+num_keypoints: 17
+
+# Device configuration
+device: ${oc.env:CUDA_VISIBLE_DEVICES,cuda}
+
+# Model-specific preprocessing
+preprocessing:
+  mean: [0.485, 0.456, 0.406]  # ImageNet normalization
+  std: [0.229, 0.224, 0.225]
+  
+# Model characteristics (for documentation)
+metadata:
+  description: "ViTPose-Small (Vision Transformer) for COCO 2D pose estimation"
+  accuracy_ap: 73.8  # COCO val2017 AP
+  params_millions: 24.3
+  flops_gflops: 5.7
+  inference_fps: 50  # Approximate on RTX 3080
+  
+# Special note: Requires mmpretrain for ViT backbone
+requires:
+  - mmpretrain
