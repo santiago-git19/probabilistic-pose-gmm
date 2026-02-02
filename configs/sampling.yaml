@@ -1,0 +1,81 @@
+# ============================================================================
+# Monte Carlo Sampling Configuration
+# ============================================================================
+# This configuration controls how samples are drawn from pose heatmaps for
+# uncertainty quantification via Gaussian Mixture Models.
+
+sampling:
+  # Sampling strategy: "rejection", "importance", "uniform", "stratified"
+  # Recommended: "rejection" (unbiased, efficient for peaked distributions)
+  method: "rejection"
+  
+  # Number of samples to draw per keypoint
+  # Higher values → better statistical estimates but slower
+  # Typical range: 100-1000
+  # Academic standard (ETH/CVL): 500
+  num_samples: 500
+  
+  # Batch size for vectorized rejection sampling
+  # Controls memory-computation tradeoff
+  # Larger batches → fewer iterations but more memory
+  # Recommended: 10 * num_samples for peaked distributions
+  batch_size: 5000
+  
+  # Maximum number of rejection sampling iterations
+  # Safety mechanism to prevent infinite loops with pathological heatmaps
+  max_iterations: 100
+  
+  # Dequantization: Add uniform jitter U[-0.5, 0.5] to discretized coordinates
+  # Critical for preventing singular covariance matrices
+  # Should be True for downstream Gaussian fitting
+  use_dequantization: true
+  
+  # Sub-pixel jitter magnitude (in pixels)
+  # 0.5 → uniform over pixel (recommended for discrete heatmaps)
+  # 0.25 → more concentrated (for high-res heatmaps)
+  jitter_magnitude: 0.5
+  
+  # Temperature scaling for heatmap sharpening/smoothing
+  # T < 1: Sharper (concentrate samples at peaks)
+  # T = 1: No modification
+  # T > 1: Smoother (explore more)
+  temperature: 1.0
+  
+  # Random seed for reproducibility
+  # Set to null for non-deterministic behavior
+  seed: 42
+  
+  # Minimum heatmap mass threshold
+  # If sum(heatmap) < threshold, reject the keypoint as invalid
+  # Prevents numerical issues with near-zero heatmaps
+  min_heatmap_mass: 1e-6
+  
+  # Stratified sampling parameters (only used if method="stratified")
+  stratified:
+    grid_size: [8, 8]  # (rows, cols) grid subdivision
+  
+  # Importance sampling parameters (only used if method="importance")
+  importance:
+    # No additional parameters needed (uses np.random.choice)
+    pass
+
+# ============================================================================
+# Validation and Diagnostics
+# ============================================================================
+diagnostics:
+  # Compute and log effective sample size (ESS)
+  # ESS measures sample diversity (ESS ∈ [1, N])
+  # Low ESS indicates weight collapse (over-confident heatmaps)
+  compute_ess: true
+  
+  # Warn if ESS falls below this fraction of num_samples
+  # Typical threshold: 0.5
+  ess_threshold: 0.5
+  
+  # Warn if rejection rate exceeds this value
+  # High rejection rate → inefficient sampling → check heatmap quality
+  max_rejection_rate: 0.95
+  
+  # Save sampling diagnostics to file for analysis
+  save_diagnostics: false
+  output_path: "${paths.outputs_dir}/sampling_diagnostics.json"

@@ -4,6 +4,7 @@
 defaults:
   - model: hrnet_w32  # Can be overridden: resnet50, vitpose_small, etc.
   - tta: default
+  - sampling: sampling  # Monte Carlo sampling configuration
   - _self_
 
 # Random seed for reproducibility
