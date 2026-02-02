@@ -1,5 +1,8 @@
 .PHONY: setup-models install check clean
 
+# Variable para especificar el backend (cpu o cuda)
+BACKEND ?= cpu
+
 setup-models:
 	@echo "--- [1/3] Configurando Modelos y Pesos ---"
 	@chmod +x scripts/models_installation/setup_models.sh
@@ -8,9 +11,11 @@ setup-models:
 install:
 	@echo "--- [2/3] Instalando Entorno Python (Modo Robusto) ---"
 	
-	@# [A] Actualizar herramientas
-	@echo " -> [A] Actualizando pip, setuptools y wheel..."
-	poetry run pip install --upgrade pip setuptools wheel
+	
+
+	@# [D] Dependencias Poetry
+	@echo " -> [D] Instalando resto de dependencias con Poetry..."
+	poetry install
 	
 	@# [B] Fix Chumpy
 	@echo " -> [B] Parcheando librería legacy: chumpy..."
@@ -19,15 +24,26 @@ install:
 	@# [C] Instalar Core OpenMMLab (VERSIONES PINNEADAS)
 	@# Usamos mmcv 2.1.0 y mmdet 3.2.0 para satisfacer las restricciones de MMPose 1.3.2
 	@echo " -> [C] Instalando Motores OpenMMLab (Versiones Golden)..."
-	poetry run mim install "mmcv==2.1.0" "mmdet==3.2.0"
+	poetry run pip uninstall -y mmcv
+ifeq ($(BACKEND), cuda)
+	@echo " -> Usando CUDA 11.3 para instalar MMCV..., si usas otra versión, cambia la URL VER -> https://mmcv.readthedocs.io/en/latest/get_started/installation.html#installation"
+	pip install mmcv==2.1.0 -f https://download.openmmlab.com/mmcv/dist/cu113/torch2.1/index.html
+else
+	@echo " -> Usando CPU para instalar MMCV..."
+	pip install mmcv==2.1.0 -f https://download.openmmlab.com/mmcv/dist/cpu/torch2.1/index.html
+endif
+	poetry run mim install "mmdet==3.2.0"
+
+	@# [D] Fix Chumpy (Dentro de Poetry)
+	@echo " -> [D] Parcheando librería legacy: chumpy (Dentro de Poetry)..."
+	poetry run pip install chumpy==0.70 --no-build-isolation
 	
-	@# [D] Dependencias Poetry
-	@echo " -> [D] Instalando resto de dependencias con Poetry..."
-	poetry install
+	
 	
 	@# [E] MMPose Local
 	@echo " -> [E] Instalando MMPose local..."
 	poetry run pip install -e models/mmpose --no-build-isolation
+
 
 check:
 	@echo "--- [3/3] Verificando Salud del Entorno ---"
