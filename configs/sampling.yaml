@@ -13,17 +13,17 @@ sampling:
   # Higher values → better statistical estimates but slower
   # Typical range: 100-1000
   # Academic standard (ETH/CVL): 500
-  num_samples: 500 # We will use the number of samples defined in config.yaml
+  num_samples: 5000 # We will use the number of samples defined in config.yaml
   
   # Batch size for vectorized rejection sampling
   # Controls memory-computation tradeoff
   # Larger batches → fewer iterations but more memory
   # Recommended: 10 * num_samples for peaked distributions
-  batch_size: 5000
+  batch_size: 50000
   
   # Maximum number of rejection sampling iterations
   # Safety mechanism to prevent infinite loops with pathological heatmaps
-  max_iterations: 100
+  max_iterations: 1000
   
   # Dequantization: Add uniform jitter U[-0.5, 0.5] to discretized coordinates
   # Critical for preventing singular covariance matrices
@@ -39,7 +39,7 @@ sampling:
   # T < 1: Sharper (concentrate samples at peaks)
   # T = 1: No modification
   # T > 1: Smoother (explore more)
-  temperature: 1.0
+  temperature: 0.1
   
   # Random seed for reproducibility
   # Set to null for non-deterministic behavior

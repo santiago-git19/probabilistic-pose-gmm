@@ -8,15 +8,15 @@ mixture_model:
   min_component_weight: 1e-3    # Threshold for dead component detection
 
   # Model Selection (AIC/BIC)
-  aic_weight: 0.5               # Weight for AIC in combined score
-  bic_weight: 0.5               # Weight for BIC in combined score
+  aic_weight: 0               # Weight for AIC in combined score
+  bic_weight: 1               # Weight for BIC in combined score
 
   # Initialization
   initialization_method: kmeans # 'kmeans' (scipy.cluster.vq.kmeans2) or 'random'
 
   # Outer Loop Strategy (Re-sampling stability)
   outer_loop_iterations: 5      # T: Number of bootstrap iterations
-  bootstrap_sample_size: 500    # Samples per bootstrap iteration
+  bootstrap_sample_size: 1000    # Samples per bootstrap iteration
 
   # Uniform Component (Outlier Handling)
   initial_uniform_weight: 0.1   # Initial weight for uniform component
