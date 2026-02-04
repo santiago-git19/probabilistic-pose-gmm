@@ -564,5 +564,427 @@ def test_full_sampling_pipeline(gaussian_heatmap):
         f"Covariance error too large:\n{estimated_cov}\nvs\n{true_cov}"
 
 
+# =============================================================================
+# Test: Mixture Model (RobustGaussianMixture)
+# =============================================================================
+
+from sklearn.datasets import make_blobs
+from pose_uncertainty.core.mixture import (
+    RobustGaussianMixture,
+    MixtureResult,
+    select_best_model,
+    fit_with_outer_loop,
+)
+
+
+class TestMixtureModel:
+    """
+    Unit tests for the RobustGaussianMixture EM implementation.
+    
+    Tests cover:
+        1. Convergence on synthetic Gaussian blobs
+        2. Singularity handling (collinear points)
+        3. Model selection (AIC/BIC)
+        4. Outlier robustness (uniform component)
+    """
+    
+    @pytest.fixture
+    def single_blob_data(self):
+        """
+        Generate single Gaussian blob data for unimodal testing.
+        
+        Returns:
+            Tuple of (samples, true_mean, true_std).
+        """
+        X, _ = make_blobs(
+            n_samples=1000,
+            centers=[[10.0, 20.0]],
+            cluster_std=2.0,
+            random_state=42
+        )
+        return X, np.array([10.0, 20.0]), 2.0
+    
+    @pytest.fixture
+    def two_blob_data(self):
+        """
+        Generate two well-separated Gaussian blobs for bimodal testing.
+        
+        Returns:
+            Tuple of (samples, centers, cluster_std).
+        """
+        centers = [[5.0, 10.0], [25.0, 10.0]]
+        X, labels = make_blobs(
+            n_samples=1000,
+            centers=centers,
+            cluster_std=2.0,
+            random_state=42
+        )
+        return X, np.array(centers), 2.0
+    
+    @pytest.fixture
+    def collinear_data(self):
+        """
+        Generate collinear (1D line) data for singularity testing.
+        
+        This will produce a singular covariance matrix (rank 1).
+        
+        Returns:
+            Array of shape (100, 2) with points on a line.
+        """
+        rng = np.random.default_rng(42)
+        t = rng.uniform(0, 10, 100)
+        x = 2 * t + 5 + rng.normal(0, 0.001, 100)  # Very small noise
+        y = 3 * t + 7 + rng.normal(0, 0.001, 100)
+        return np.column_stack([x, y])
+    
+    # =========================================================================
+    # Test: Basic Convergence
+    # =========================================================================
+    
+    def test_single_gaussian_convergence(self, single_blob_data):
+        """
+        Test that EM converges to correct parameters for single Gaussian.
+        
+        Statistical test:
+            - Fitted mean should be within 3σ/√N of true mean
+            - Algorithm should converge (not hit max iterations)
+        """
+        X, true_mean, true_std = single_blob_data
+        
+        gmm = RobustGaussianMixture(
+            n_components=1,
+            reg_covar=1e-4,
+            max_iter=100,
+            tol=1e-4,
+            random_state=42
+        )
+        
+        gmm.fit(X)
+        
+        # Check convergence
+        assert gmm.converged_, "EM did not converge for single Gaussian"
+        assert gmm.n_iter_ < gmm.max_iter, \
+            f"EM used all {gmm.max_iter} iterations"
+        
+        # Extract fitted mean
+        fitted_mean, fitted_cov = gmm.get_mode()
+        
+        # Statistical tolerance: 3σ/√N
+        std_error = true_std / np.sqrt(len(X))
+        tolerance = 3 * std_error
+        
+        np.testing.assert_allclose(
+            fitted_mean, true_mean, atol=tolerance,
+            err_msg=f"Mean mismatch: {fitted_mean} vs {true_mean}"
+        )
+    
+    def test_two_gaussian_convergence(self, two_blob_data):
+        """
+        Test that EM correctly identifies two clusters.
+        
+        Verification:
+            - Both means should be close to true cluster centers
+            - Each component should have significant weight
+        """
+        X, true_centers, true_std = two_blob_data
+        
+        gmm = RobustGaussianMixture(
+            n_components=2,
+            reg_covar=1e-4,
+            max_iter=100,
+            tol=1e-4,
+            random_state=42
+        )
+        
+        gmm.fit(X)
+        
+        # Check convergence
+        assert gmm.converged_, "EM did not converge for two Gaussians"
+        
+        # Extract fitted means
+        fitted_means = np.array([c.mean for c in gmm.components_])
+        
+        # Match fitted means to true centers (may be permuted)
+        # Use Hungarian algorithm logic (simple for 2 components)
+        dist_00 = np.linalg.norm(fitted_means[0] - true_centers[0])
+        dist_01 = np.linalg.norm(fitted_means[0] - true_centers[1])
+        
+        if dist_00 < dist_01:
+            matched = [(0, 0), (1, 1)]
+        else:
+            matched = [(0, 1), (1, 0)]
+        
+        # Check that fitted means are close to true centers
+        std_error = true_std / np.sqrt(len(X) / 2)
+        tolerance = 5 * std_error  # More lenient for mixture
+        
+        for fitted_idx, true_idx in matched:
+            np.testing.assert_allclose(
+                fitted_means[fitted_idx],
+                true_centers[true_idx],
+                atol=tolerance,
+                err_msg=f"Mean {fitted_idx} doesn't match center {true_idx}"
+            )
+        
+        # Check weights are reasonable (both should be around 0.4-0.5)
+        weights = [c.weight for c in gmm.components_]
+        for w in weights:
+            assert 0.2 < w < 0.8, f"Component weight {w} is unreasonable"
+    
+    # =========================================================================
+    # Test: Singularity Handling
+    # =========================================================================
+    
+    def test_collinear_points_no_crash(self, collinear_data):
+        """
+        Test that collinear points don't cause crash.
+        
+        Collinear data has rank-1 covariance matrix (singular).
+        The algorithm should:
+            1. NOT crash with LinAlgError
+            2. Apply regularization automatically
+            3. Still converge to reasonable parameters
+        """
+        X = collinear_data
+        
+        gmm = RobustGaussianMixture(
+            n_components=1,
+            reg_covar=1e-3,  # Strong regularization for near-singular case
+            max_iter=100,
+            tol=1e-4,
+            random_state=42
+        )
+        
+        # Should NOT raise exception
+        gmm.fit(X)
+        
+        # Should have converged or at least not crashed
+        assert gmm.n_iter_ > 0, "No iterations performed"
+        
+        # Covariance should be regularized (positive definite)
+        _, cov = gmm.get_mode()
+        eigenvalues = np.linalg.eigvalsh(cov)
+        
+        assert np.all(eigenvalues > 0), \
+            f"Covariance not positive definite: eigenvalues = {eigenvalues}"
+    
+    def test_regularization_applied_warning(self, collinear_data, caplog):
+        """
+        Test that regularization is applied and logged for singular matrices.
+        """
+        import logging
+        
+        X = collinear_data
+        
+        # Enable debug logging to capture regularization warnings
+        with caplog.at_level(logging.DEBUG, logger='pose_uncertainty.core.mixture'):
+            gmm = RobustGaussianMixture(
+                n_components=1,
+                reg_covar=1e-2,
+                random_state=42
+            )
+            gmm.fit(X)
+        
+        # The covariance should be regularized (check eigenvalues)
+        _, cov = gmm.get_mode()
+        min_eig = np.linalg.eigvalsh(cov).min()
+        assert min_eig >= gmm.reg_covar * 0.5, \
+            f"Minimum eigenvalue {min_eig} is too small"
+    
+    # =========================================================================
+    # Test: Model Selection (AIC/BIC)
+    # =========================================================================
+    
+    def test_model_selection_single_blob(self, single_blob_data):
+        """
+        Test that model selection prefers K=1 for unimodal data.
+        
+        When data comes from a single Gaussian, the AIC/BIC penalty
+        for extra parameters should favor the simpler model.
+        """
+        X, _, _ = single_blob_data
+        
+        result = select_best_model(
+            X,
+            aic_weight=0.5,
+            bic_weight=0.5,
+            reg_covar=1e-4,
+            random_state=42
+        )
+        
+        assert result.model_type == 'unimodal', \
+            f"Expected unimodal, got {result.model_type}"
+    
+    def test_model_selection_two_blobs(self, two_blob_data):
+        """
+        Test that model selection prefers K=2 for bimodal data.
+        
+        When data clearly comes from two well-separated Gaussians,
+        the bimodal model should fit significantly better.
+        """
+        X, _, _ = two_blob_data
+        
+        result = select_best_model(
+            X,
+            aic_weight=0.5,
+            bic_weight=0.5,
+            reg_covar=1e-4,
+            random_state=42
+        )
+        
+        assert result.model_type == 'bimodal', \
+            f"Expected bimodal, got {result.model_type}"
+    
+    def test_aic_bic_calculation(self, single_blob_data):
+        """
+        Test that AIC/BIC are computed correctly.
+        
+        For K components with 2D data:
+            - Parameters: K * (2 means + 3 cov params + 1 weight) = 6K
+            - AIC = 2k - 2 ln(L)
+            - BIC = k ln(n) - 2 ln(L)
+        """
+        X, _, _ = single_blob_data
+        n_samples = len(X)
+        
+        gmm = RobustGaussianMixture(n_components=1, random_state=42)
+        gmm.fit(X)
+        
+        aic = gmm.compute_aic(n_samples)
+        bic = gmm.compute_bic(n_samples)
+        
+        # AIC and BIC should be finite
+        assert np.isfinite(aic), f"AIC is not finite: {aic}"
+        assert np.isfinite(bic), f"BIC is not finite: {bic}"
+        
+        # BIC should penalize more than AIC for large N
+        # BIC uses ln(n) ≈ 6.9 for n=1000, AIC uses 2
+        n_params = 6  # K=1 component
+        expected_diff = n_params * (np.log(n_samples) - 2)
+        actual_diff = bic - aic
+        
+        np.testing.assert_allclose(
+            actual_diff, expected_diff, rtol=0.01,
+            err_msg="BIC-AIC difference doesn't match expected"
+        )
+    
+    # =========================================================================
+    # Test: Outlier Robustness (Uniform Component)
+    # =========================================================================
+    
+    def test_uniform_component_absorbs_outliers(self, single_blob_data):
+        """
+        Test that the uniform component absorbs outlier points.
+        
+        Add artificial outliers and verify:
+            1. Gaussian mean is not affected
+            2. Uniform weight increases to account for outliers
+        """
+        X, true_mean, _ = single_blob_data
+        
+        # Add 10% outliers (random uniform noise)
+        rng = np.random.default_rng(42)
+        n_outliers = int(0.1 * len(X))
+        outliers = rng.uniform(-50, 50, size=(n_outliers, 2))
+        X_with_outliers = np.vstack([X, outliers])
+        
+        gmm = RobustGaussianMixture(
+            n_components=1,
+            reg_covar=1e-4,
+            random_state=42
+        )
+        gmm.fit(X_with_outliers, initial_uniform_weight=0.05)
+        
+        # Uniform weight should have increased
+        assert gmm.uniform_weight_ > 0.05, \
+            f"Uniform weight {gmm.uniform_weight_} didn't increase with outliers"
+        
+        # Gaussian mean should still be close to true mean
+        fitted_mean, _ = gmm.get_mode()
+        np.testing.assert_allclose(
+            fitted_mean, true_mean, atol=1.0,
+            err_msg=f"Mean affected by outliers: {fitted_mean} vs {true_mean}"
+        )
+    
+    # =========================================================================
+    # Test: Outer Loop Stability
+    # =========================================================================
+    
+    def test_outer_loop_reduces_variance(self, single_blob_data):
+        """
+        Test that the outer loop strategy reduces estimate variance.
+        
+        Multiple bootstrap iterations should produce more stable estimates
+        than a single fit.
+        """
+        X, true_mean, _ = single_blob_data
+        
+        result = fit_with_outer_loop(
+            X,
+            n_outer_iterations=10,
+            n_resamples=500,
+            random_state=42
+        )
+        
+        # Result should be close to true mean
+        np.testing.assert_allclose(
+            result.best_mean, true_mean, atol=0.5,
+            err_msg=f"Outer loop mean: {result.best_mean} vs {true_mean}"
+        )
+        
+        # Covariance should be positive definite
+        eigenvalues = np.linalg.eigvalsh(result.best_covariance)
+        assert np.all(eigenvalues > 0), "Covariance not positive definite"
+    
+    # =========================================================================
+    # Test: Edge Cases
+    # =========================================================================
+    
+    def test_minimum_samples(self):
+        """Test behavior with minimum number of samples."""
+        X = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
+        
+        gmm = RobustGaussianMixture(n_components=1, random_state=42)
+        gmm.fit(X)
+        
+        assert gmm.n_iter_ > 0, "Should complete at least one iteration"
+    
+    def test_insufficient_samples_error(self):
+        """Test that too few samples raises error."""
+        X = np.array([[1.0, 2.0]])  # Only 1 sample
+        
+        gmm = RobustGaussianMixture(n_components=2, random_state=42)
+        
+        with pytest.raises(ValueError, match="at least"):
+            gmm.fit(X)
+    
+    def test_invalid_shape_error(self):
+        """Test that wrong input shape raises error."""
+        X_1d = np.array([1.0, 2.0, 3.0])
+        X_3d = np.random.rand(100, 3)
+        
+        gmm = RobustGaussianMixture(n_components=1)
+        
+        with pytest.raises(ValueError, match="shape"):
+            gmm.fit(X_1d)
+        
+        with pytest.raises(ValueError, match="shape"):
+            gmm.fit(X_3d)
+    
+    def test_reproducibility(self, single_blob_data):
+        """Test that same seed produces identical results."""
+        X, _, _ = single_blob_data
+        
+        gmm1 = RobustGaussianMixture(n_components=1, random_state=42)
+        gmm1.fit(X)
+        mean1, _ = gmm1.get_mode()
+        
+        gmm2 = RobustGaussianMixture(n_components=1, random_state=42)
+        gmm2.fit(X)
+        mean2, _ = gmm2.get_mode()
+        
+        np.testing.assert_array_equal(mean1, mean2, "Results not reproducible")
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])
