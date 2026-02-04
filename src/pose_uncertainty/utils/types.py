@@ -218,3 +218,51 @@ class AugmentationParams:
         Critical for TTA: We apply T to images, then T⁻¹ to predictions.
         """
         ...
+
+
+
+
+@dataclass
+class MixtureComponent:
+    """
+    Single component of a Gaussian Mixture Model.
+    
+    Attributes:
+        mean: Component mean (μₖ) of shape (D,).
+        covariance: Covariance matrix (Σₖ) of shape (D, D).
+        weight: Mixing coefficient (πₖ) where Σₖ πₖ = 1.
+        n_samples: Number of samples currently assigned to this component.
+    """
+    mean: npt.NDArray[np.float32]
+    covariance: npt.NDArray[np.float32]
+    weight: float
+    n_samples: int = 0
+
+
+@dataclass
+class MixtureResult:
+    """
+    Result container for mixture model fitting.
+    
+    Attributes:
+        model_type: Type of model fitted ('unimodal' or 'bimodal').
+        best_mean: Best estimate of the keypoint location.
+        best_covariance: Uncertainty covariance matrix.
+        log_likelihood: Final log-likelihood of the model.
+        aic: Akaike Information Criterion.
+        bic: Bayesian Information Criterion.
+        n_iterations: Number of EM iterations performed.
+        converged: Whether the algorithm converged.
+        components: List of fitted mixture components.
+        uniform_weight: Weight of the uniform (outlier) component.
+    """
+    model_type: str
+    best_mean: npt.NDArray[np.float64]
+    best_covariance: npt.NDArray[np.float64]
+    log_likelihood: float
+    aic: float
+    bic: float
+    n_iterations: int
+    converged: bool
+    components: List[MixtureComponent]
+    uniform_weight: float
