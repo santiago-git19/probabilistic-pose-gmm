@@ -13,7 +13,7 @@ sampling:
   # Higher values → better statistical estimates but slower
   # Typical range: 100-1000
   # Academic standard (ETH/CVL): 500
-  num_samples: 500
+  num_samples: 500 # We will use the number of samples defined in config.yaml
   
   # Batch size for vectorized rejection sampling
   # Controls memory-computation tradeoff

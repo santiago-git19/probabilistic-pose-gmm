@@ -5,6 +5,7 @@ defaults:
   - model: hrnet_w32  # Can be overridden: resnet50, vitpose_small, etc.
   - tta: default
   - sampling: sampling  # Monte Carlo sampling configuration
+  - mixture_model: mixture
   - _self_
 
 # Random seed for reproducibility
@@ -40,13 +41,6 @@ dataset:
   # dataset.annotations="annotations/ochuman_coco_format_val_range_0.00_1.00.json"
   # dataset.images="images"
 
-# Model configuration
-model:
-  type: mmpose  # Framework: mmpose, detectron2, etc.
-  checkpoint_path: ???  # Must be provided
-  device: cuda
-  input_size: [256, 192]  # [H, W]
-
 # Test-Time Adaptation parameters
 tta:
   # Augmentation strategy
@@ -68,26 +62,22 @@ tta:
 
 # Mathematical Core Configuration
 math_core:
-  # Restricted Gaussian Mixture parameters
-  mixture:
-    n_components: 2  # Binary mixture for limb swap detection
-    shared_covariance: true  # Key constraint: Σ₁ = Σ₂
-    covariance_type: full  # full, tied, diag, spherical
-    convergence_threshold: 1e-4
-    max_iterations: 100
-    regularization: 1e-6  # For numerical stability
+  # Robust Mixture Model Configuration
+  # This section controls the RobustGaussianMixture EM algorithm
+  mixture_model: ${mixture_model.mixture_model}
   
   # Monte Carlo Sampling parameters
-  sampling:
-    n_samples: 500  # Number of samples per keypoint
-    sampling_strategy: importance  # importance, uniform, stratified
-    temperature: 1.0  # Softmax temperature for heatmap sampling
+  sampling: ${sampling.sampling}
+
+  diagnostics_sampling: ${sampling.diagnostics}
   
   # Outlier detection
   outlier:
     enabled: true
     method: mahalanobis  # mahalanobis, z_score, isolation_forest
     threshold: 3.0  # Standard deviations for Mahalanobis distance
+
+
 
 # Post-processing
 postprocess:
