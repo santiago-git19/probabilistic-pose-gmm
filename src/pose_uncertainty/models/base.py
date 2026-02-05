@@ -166,6 +166,75 @@ class BasePoseModel(ABC):
         raise NotImplementedError("Subclasses must implement predict()")
     
     @abstractmethod
+    def predict_keypoints(
+        self,
+        image: npt.NDArray[np.uint8],
+        bbox: Optional[Tuple[float, float, float, float]] = None
+    ) -> Tuple[npt.NDArray[np.float32], npt.NDArray[np.float32]]:
+        """
+        Predict keypoint coordinates directly from image.
+        
+        This method performs complete inference and returns keypoints in
+        original image space (not heatmap space).
+        
+        Args:
+            image: Input image as numpy array (H, W, 3) in RGB format, uint8.
+            bbox: Optional bounding box (x1, y1, x2, y2) for cropping.
+        
+        Returns:
+            Tuple of:
+                - keypoints: (num_keypoints, 2) array of (x, y) coordinates
+                - scores: (num_keypoints,) confidence scores [0, 1]
+        
+        Guarantees:
+            - Coordinates are in original image space
+            - Scores are normalized to [0, 1] range
+        """
+        raise NotImplementedError("Subclasses must implement predict_keypoints()")
+    
+    @abstractmethod
+    def decode_heatmaps(
+        self,
+        heatmap: StandardizedHeatmap,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> Tuple[npt.NDArray[np.float32], npt.NDArray[np.float32]]:
+        """
+        Decode heatmaps to keypoint coordinates.
+        
+        This method converts probability heatmaps to discrete (x, y) coordinates
+        using the model's decoder (e.g., argmax, soft-argmax, DARK refinement).
+        
+        Critical Requirement:
+        --------------------
+        The following must hold for consistency:
+        
+            keypoints_direct, scores_direct = model.predict_keypoints(image, bbox)
+            heatmap = model.predict(image, bbox)
+            keypoints_decoded, scores_decoded = model.decode_heatmaps(heatmap, metadata)
+            
+            assert np.allclose(keypoints_direct, keypoints_decoded, atol=1e-2)
+        
+        This ensures the heatmap→keypoint pipeline is mathematically equivalent
+        to direct keypoint prediction.
+        
+        Args:
+            heatmap: StandardizedHeatmap instance with probability distributions.
+            metadata: Optional dict with transformation info (center, scale, etc.).
+                     If None, uses heatmap.original_size and heatmap metadata.
+        
+        Returns:
+            Tuple of:
+                - keypoints: (num_keypoints, 2) in original image coordinates
+                - scores: (num_keypoints,) confidence scores
+        
+        Implementation Notes:
+            - Use model's official decoder (e.g., MSRAHeatmap, UDPHeatmap)
+            - Apply same coordinate transformations as predict_keypoints()
+            - Handle edge cases (low confidence, out of bounds)
+        """
+        raise NotImplementedError("Subclasses must implement decode_heatmaps()")
+    
+    @abstractmethod
     def warmup(self, iterations: int = 3) -> None:
         """
         Warm up model with dummy inputs for accurate timing.
@@ -362,7 +431,7 @@ class MockPoseModel(BasePoseModel):
     def __init__(
         self,
         mode: str = "unimodal",
-        noise_level: float = 0.05,
+        noise_level: float = 0.0,  # No noise by default for deterministic tests
         input_size: Tuple[int, int] = (64, 48),
         num_keypoints: int = 17,
         **kwargs: Any
@@ -441,6 +510,48 @@ class MockPoseModel(BasePoseModel):
             scale_factor=1.0,
             offset=(0.0, 0.0)
         )
+    
+    def predict_keypoints(
+        self,
+        image: npt.NDArray[np.uint8],
+        bbox: Optional[Tuple[float, float, float, float]] = None
+    ) -> Tuple[npt.NDArray[np.float32], npt.NDArray[np.float32]]:
+        """Generate synthetic keypoints by finding peaks in mock heatmaps."""
+        # Get heatmap first
+        heatmap = self.predict(image, bbox)
+        # Decode using the same method to ensure consistency
+        return self.decode_heatmaps(heatmap)
+    
+    def decode_heatmaps(
+        self,
+        heatmap: StandardizedHeatmap,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> Tuple[npt.NDArray[np.float32], npt.NDArray[np.float32]]:
+        """Decode mock heatmaps by finding argmax and scaling to original image."""
+        data = heatmap.data  # (K, H, W)
+        num_keypoints, h, w = data.shape
+        
+        keypoints = np.zeros((num_keypoints, 2), dtype=np.float32)
+        scores = np.zeros(num_keypoints, dtype=np.float32)
+        
+        # Find peak in each heatmap
+        for k in range(num_keypoints):
+            hm = data[k]
+            max_idx = np.argmax(hm)
+            y_hm, x_hm = np.unravel_index(max_idx, (h, w))
+            
+            # Store coordinates in heatmap space first
+            keypoints[k] = [float(x_hm), float(y_hm)]
+            scores[k] = float(hm[y_hm, x_hm])
+        
+        # Scale to original image space
+        if hasattr(heatmap, 'original_size') and heatmap.original_size:
+            orig_h, orig_w = heatmap.original_size
+            # Scale from heatmap coordinates to image coordinates
+            keypoints[:, 0] *= (orig_w / w)
+            keypoints[:, 1] *= (orig_h / h)
+        
+        return keypoints, scores
     
     def warmup(self, iterations: int = 3) -> None:
         """No-op for mock model."""

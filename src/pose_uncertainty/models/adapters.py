@@ -333,90 +333,127 @@ class MMPoseAdapter(BasePoseModel):
         bbox: Optional[Tuple[float, float, float, float]] = None
     ) -> StandardizedHeatmap:
         """
-        Run pose estimation on an image using MMPose.
+        Run pose estimation and extract heatmaps DIRECTLY from model.
         
-        Pipeline:
+        Strategy:
         --------
-        1. Convert bbox format if provided
-        2. Run direct forward pass to get heatmaps from model head
-        3. Extract heatmaps before decoding
-        4. Package in StandardizedHeatmap
+        Wrap the head.decoder.decode() method to capture heatmaps before decoding.
+        This ensures heatmaps and keypoints come from the SAME forward pass.
+        
+        This ensures:
+        - Heatmaps are ALWAYS inferred by the model (never reconstructed)
+        - Metadata comes from the same preprocessing as keypoints
+        - No manual preprocessing that might differ from inference_topdown
         
         Args:
             image: RGB image (H, W, 3), uint8 format.
             bbox: Optional person bounding box (x, y, w, h) in COCO format.
-                 If provided, crops image before inference.
         
         Returns:
-            StandardizedHeatmap with:
-                - data: (num_keypoints, h, w) heatmap tensor
-                - original_size: (H, W) from input image
-                - scale_factor: Resize ratio applied
-                - offset: Padding offset (dx, dy)
-        
-        Note:
-            This method uses direct model forward pass to access heatmaps
-            before they are decoded into keypoint coordinates.
+            StandardizedHeatmap with model-inferred heatmaps and correct metadata.
         """
+        from mmpose.apis import inference_topdown
+        import torch
+        
         original_size = (image.shape[0], image.shape[1])
         
-        # Forward pass with heatmap extraction
-        try:
-            heatmap, metadata = self._forward_with_heatmaps(image, bbox)
+        # Convert bbox format
+        if bbox is not None:
+            x, y, w, h = bbox
+            bbox_xyxy = np.array([[x, y, x + w, y + h]])
+        else:
+            img_h, img_w = image.shape[:2]
+            bbox_xyxy = np.array([[0, 0, img_w, img_h]])
+        
+        # Storage for captured heatmaps
+        captured_heatmaps = []
+        
+        # Wrap the decoder's decode method to capture heatmaps
+        if hasattr(self._model.head, 'decoder'):
+            decoder = self._model.head.decoder
+            original_decode = decoder.decode
             
+            def wrapped_decode(encoded, *args, **kwargs):
+                """Capture heatmaps before decoding."""
+                # encoded contains the heatmaps (can be numpy array or tensor)
+                if isinstance(encoded, torch.Tensor):
+                    captured_heatmaps.append(encoded.detach().clone())
+                elif isinstance(encoded, np.ndarray):
+                    captured_heatmaps.append(encoded.copy())
+                # Call original decode
+                return original_decode(encoded, *args, **kwargs)
+            
+            decoder.decode = wrapped_decode
+        else:
+            original_decode = None
+        
+        try:
+            # Run inference_topdown (this will trigger our wrapped decoder)
+            results = inference_topdown(self._model, image, bboxes=bbox_xyxy)
+        finally:
+            # Restore original decode method
+            if original_decode is not None:
+                self._model.head.decoder.decode = original_decode
+        
+        # Check if we got results
+        if len(results) == 0 or len(captured_heatmaps) == 0:
+            logger.warning("No pose detected or heatmaps not captured")
+            heatmap_size = self._get_heatmap_size()
+            empty_heatmap = np.zeros(
+                (self.num_keypoints, heatmap_size[0], heatmap_size[1]),
+                dtype=np.float32
+            )
             return StandardizedHeatmap(
-                data=heatmap,
+                data=empty_heatmap,
                 original_size=original_size,
-                scale_factor=metadata.get("scale_factor", 1.0),
-                offset=metadata.get("offset", (0.0, 0.0)),
-                confidence_map=metadata.get("confidence_map", None),
-                reconstructed=False  # Heatmap was obtained directly from the model
+                scale_factor=1.0,
+                offset=(0.0, 0.0),
+                reconstructed=False
             )
         
-        except Exception as e:
-            logger.warning(f"Failed to extract heatmaps directly: {e}")
-            logger.info("Falling back to coordinate-based reconstruction")
-            
-            # Fallback: Use inference_topdown and reconstruct from coordinates
-            from mmpose.apis import inference_topdown
-            
-            # Convert bbox format
-            if bbox is not None:
-                x, y, w, h = bbox
-                bbox_xyxy = np.array([[x, y, x + w, y + h]])
-            else:
-                img_h, img_w = image.shape[:2]
-                bbox_xyxy = np.array([[0, 0, img_w, img_h]])
-            
-            # Run inference
-            results = inference_topdown(self._model, image, bboxes=bbox_xyxy)
-            
-            if len(results) == 0:
-                logger.warning("No pose detected in image")
-                heatmap_size = self._get_heatmap_size()
-                empty_heatmap = np.zeros(
-                    (self.num_keypoints, heatmap_size[0], heatmap_size[1]),
-                    dtype=np.float32
-                )
-                return StandardizedHeatmap(
-                    data=empty_heatmap,
-                    original_size=original_size,
-                    scale_factor=1.0,
-                    offset=(0.0, 0.0)
-                )
-            
-            # Extract/reconstruct heatmaps
-            result = results[0]
-            heatmap, metadata = self._extract_heatmaps(result, original_size, bbox)
-            
-            return StandardizedHeatmap(
-                data=heatmap,
-                original_size=original_size,
-                scale_factor=metadata.get("scale_factor", 1.0),
-                offset=metadata.get("offset", (0.0, 0.0)),
-                confidence_map=metadata.get("confidence_map", None),
-                reconstructed=True  # Heatmap was reconstructed
-            )
+        # Extract result and heatmaps
+        result = results[0]
+        metainfo = result.metainfo
+        
+        # Extract heatmaps from captured data
+        heatmaps_data = captured_heatmaps[0]
+        
+        # Convert to numpy if needed
+        if isinstance(heatmaps_data, torch.Tensor):
+            heatmaps = heatmaps_data.squeeze(0).cpu().numpy()  # (K, H, W)
+        else:
+            # Already numpy array
+            heatmaps = heatmaps_data.squeeze(0) if heatmaps_data.ndim == 4 else heatmaps_data
+        
+        # Normalize to [0, 1]
+        heatmaps = self._normalize_heatmaps(heatmaps)
+        heatmaps = np.clip(heatmaps, 0.0, 1.0).astype(np.float32)
+        
+        # Extract metadata
+        metadata_dict = {
+            "input_center": metainfo.get("input_center", None),
+            "input_scale": metainfo.get("input_scale", None),
+            "input_size": metainfo.get("input_size", self.input_size)
+        }
+        
+        # Get confidence scores
+        pred_instances = result.pred_instances
+        scores = pred_instances.keypoint_scores[0]
+        if hasattr(scores, "cpu"):
+            scores = scores.cpu().numpy()
+        confidence_map = np.clip(scores, 0.0, 1.0).astype(np.float32)
+        
+        logger.debug(f"Captured heatmaps before decoding: shape={heatmaps.shape}, reconstructed=False")
+        
+        return StandardizedHeatmap(
+            data=heatmaps,
+            original_size=original_size,
+            scale_factor=1.0,
+            offset=(0.0, 0.0),
+            confidence_map=confidence_map,
+            metadata=metadata_dict,
+            reconstructed=False  # ALWAYS False - heatmaps directly from model
+        )
     
     def predict_keypoints(
         self,
@@ -424,9 +461,9 @@ class MMPoseAdapter(BasePoseModel):
         bbox: Optional[Tuple[float, float, float, float]] = None
     ) -> Tuple[npt.NDArray[np.float32], npt.NDArray[np.float32]]:
         """
-        Get keypoint coordinates directly (without heatmaps).
+        Get keypoint coordinates directly from image (without explicit heatmaps).
         
-        Useful for quick inference when uncertainty quantification is not needed.
+        Uses the same forward pass as predict() to guarantee consistency.
         
         Args:
             image: RGB image (H, W, 3), uint8.
@@ -459,7 +496,117 @@ class MMPoseAdapter(BasePoseModel):
         keypoints = pred_instances.keypoints[0]  # (K, 2)
         scores = pred_instances.keypoint_scores[0]  # (K,)
         
+        # Convert to numpy if needed
+        if hasattr(keypoints, "cpu"):
+            keypoints = keypoints.cpu().numpy()
+        if hasattr(scores, "cpu"):
+            scores = scores.cpu().numpy()
+        
         return keypoints.astype(np.float32), scores.astype(np.float32)
+    
+    def decode_heatmaps(
+        self,
+        heatmap: StandardizedHeatmap,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> Tuple[npt.NDArray[np.float32], npt.NDArray[np.float32]]:
+        """
+        Decode heatmaps to keypoint coordinates using MMPose's official decoder.
+        
+        Pipeline (Following Cell 44):
+        ------------------------------
+        1. Use model's head.decoder.decode() to get keypoints in heatmap space
+        2. Extract transformation metadata from heatmap or provided metadata
+        3. Apply MMPose transformation to original image space:
+           keypoints_img = keypoints / input_size * input_scale + input_center - 0.5 * input_scale
+        
+        This replicates the exact transformation from TopdownPoseEstimator.add_pred_to_datasample()
+        to guarantee consistency with predict_keypoints().
+        
+        Args:
+            heatmap: StandardizedHeatmap with data and metadata from predict().
+            metadata: Optional dict override (uses heatmap.metadata if None).
+        
+        Returns:
+            Tuple of:
+                - keypoints: (num_keypoints, 2) in original image coordinates
+                - scores: (num_keypoints,) confidence scores
+        
+        Raises:
+            ValueError: If required metadata is missing.
+        """
+        import torch
+        
+        # Use provided metadata or extract from heatmap
+        if metadata is None:
+            if hasattr(heatmap, "metadata") and heatmap.metadata is not None:
+                metadata = heatmap.metadata
+            else:
+                raise ValueError(
+                    "No metadata available. predict() must be called with output_heatmaps=True "
+                    "to store input_center, input_scale, and input_size."
+                )
+        
+        # Extract transformation parameters
+        input_center = metadata.get("input_center")
+        input_scale = metadata.get("input_scale")
+        input_size = metadata.get("input_size", self.input_size)
+        
+        if input_center is None or input_scale is None:
+            raise ValueError(
+                "Missing input_center or input_scale in metadata. "
+                "Ensure predict() was called with the modified version that stores metadata."
+            )
+        
+        # Convert to numpy arrays
+        if not isinstance(input_center, np.ndarray):
+            input_center = np.array(input_center, dtype=np.float32)
+        if not isinstance(input_scale, np.ndarray):
+            input_scale = np.array(input_scale, dtype=np.float32)
+        if not isinstance(input_size, (list, tuple, np.ndarray)):
+            input_size = self.input_size
+        input_size = np.array(input_size, dtype=np.float32)
+        
+        # Prepare heatmaps for decoder (expects numpy array without batch dimension)
+        heatmaps_np = heatmap.data  # (K, H, W)
+        
+        # Decode using model's official decoder
+        try:
+            decoder = self._model.head.decoder
+            keypoints_decoded, scores_decoded = decoder.decode(heatmaps_np)
+            
+            # Decoder returns (N, K, 2) and (N, K) - extract first item
+            if keypoints_decoded.ndim == 3:
+                keypoints_decoded = keypoints_decoded[0]  # (K, 2)
+            if scores_decoded.ndim == 2:
+                scores_decoded = scores_decoded[0]  # (K,)
+            
+            # Convert to numpy if needed
+            if not isinstance(keypoints_decoded, np.ndarray):
+                keypoints_decoded = np.array(keypoints_decoded, dtype=np.float32)
+            if not isinstance(scores_decoded, np.ndarray):
+                scores_decoded = np.array(scores_decoded, dtype=np.float32)
+            
+            keypoints_decoded = keypoints_decoded.astype(np.float32)
+            scores_decoded = scores_decoded.astype(np.float32)
+            
+        except Exception as e:
+            logger.error(f"Decoder failed: {e}")
+            raise RuntimeError(f"Failed to decode heatmaps: {e}")
+        
+        # Use confidence_map from heatmap if available (from model's keypoint_scores)
+        # This ensures scores match between predict() and decode_heatmaps()
+        if heatmap.confidence_map is not None:
+            scores_decoded = heatmap.confidence_map
+        
+        # Apply MMPose transformation from TopdownPoseEstimator.add_pred_to_datasample()
+        # Formula: keypoints_img = keypoints / input_size * input_scale + input_center - 0.5 * input_scale
+        keypoints_transformed = (
+            keypoints_decoded / input_size * input_scale 
+            + input_center 
+            - 0.5 * input_scale
+        )
+        
+        return keypoints_transformed, scores_decoded
     
     def warmup(self, iterations: int = 3) -> None:
         """

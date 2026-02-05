@@ -13,7 +13,7 @@ a unified mathematical processing pipeline.
 """
 
 from dataclasses import dataclass, field
-from typing import Optional, Tuple, List
+from typing import Optional, Tuple, List, Dict, Any
 
 import numpy as np
 import numpy.typing as npt
@@ -83,6 +83,7 @@ class StandardizedHeatmap:
     scale_factor: float = 1.0
     offset: Tuple[float, float] = (0.0, 0.0)
     reconstructed: bool = False
+    metadata: Optional[Dict[str, Any]] = None  # Store transformation info for decode
     
     def __post_init__(self) -> None:
         """Validate data integrity."""
