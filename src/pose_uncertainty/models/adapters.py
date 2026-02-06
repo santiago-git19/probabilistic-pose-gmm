@@ -940,6 +940,117 @@ class MMPoseAdapter(BasePoseModel):
                 normalized[k] = hm
         return normalized
     
+    @staticmethod
+    def transform_heatmap_coords_to_image(
+        heatmap_coords: npt.NDArray[np.float32],
+        heatmap: StandardizedHeatmap
+    ) -> npt.NDArray[np.float32]:
+        """
+        Transform coordinates from heatmap space to original image space.
+        
+        This method replicates the exact transformation that MMPose uses internally,
+        matching the decode() method of MSRAHeatmap codec.
+        
+        Mathematical Background:
+        -----------------------
+        MMPose decode pipeline (msra_heatmap.py):
+        1. Find keypoint in heatmap space (0 to heatmap_size)
+        2. Scale to input space: coords_input = coords_heatmap * scale_factor
+           where scale_factor = input_size / heatmap_size
+        3. Transform to image space: coords_img = coords_input / input_size * input_scale 
+                                                  + input_center - 0.5 * input_scale
+        
+        Our transformation (heatmap → image) applies both steps:
+            1. coords_input = coords_heatmap * (input_size / heatmap_size)
+            2. coords_img = coords_input / input_size * input_scale + input_center - 0.5 * input_scale
+        
+        Simplified:
+            coords_img = coords_heatmap * scale_factor / input_size * input_scale 
+                       + input_center - 0.5 * input_scale
+        
+        Where:
+            - coords_heatmap: Coordinates in heatmap space (0 to heatmap_size)
+            - heatmap_size: Size of heatmap, e.g., [64, 48] as [W, H]
+            - input_size: Model input size, e.g., [256, 192] as [W, H]
+            - scale_factor: input_size / heatmap_size, e.g., [4, 4]
+            - input_scale: Bbox scale [w, h]
+            - input_center: Bbox center [cx, cy]
+        
+        Args:
+            heatmap_coords: Coordinates in heatmap space of shape (N, 2) or (2,)
+                           where N is the number of points. Format: [x, y]
+            heatmap: StandardizedHeatmap containing transformation metadata
+        
+        Returns:
+            Coordinates in original image space, same shape as input
+        
+        Raises:
+            ValueError: If metadata is missing required keys
+        
+        Example:
+            ```python
+            # After fitting mixture model on heatmap with size (48, 64) [H, W]
+            mixture_mean = np.array([32.5, 24.2])  # In heatmap space [x, y]
+            
+            # Transform to image coordinates
+            image_coords = MMPoseAdapter.transform_heatmap_coords_to_image(
+                mixture_mean, heatmap_result
+            )
+            # image_coords now contains [x_img, y_img] in original image space
+            ```
+        
+        Note:
+            This method must use the SAME metadata that was stored during
+            the forward pass in predict() to ensure mathematical consistency
+            with predict_keypoints().
+        """
+        # Validate metadata existence
+        if heatmap.metadata is None:
+            raise ValueError(
+                "Heatmap metadata is None. Cannot perform coordinate transformation. "
+                "Ensure the heatmap was generated with predict() which stores metadata."
+            )
+        
+        # Extract required metadata
+        required_keys = ['input_center', 'input_scale', 'input_size']
+        missing_keys = [key for key in required_keys if key not in heatmap.metadata]
+        if missing_keys:
+            raise ValueError(
+                f"Heatmap metadata is missing required keys: {missing_keys}. "
+                f"Available keys: {list(heatmap.metadata.keys())}"
+            )
+        
+        input_center = np.array(heatmap.metadata['input_center'], dtype=np.float32)
+        input_scale = np.array(heatmap.metadata['input_scale'], dtype=np.float32)
+        input_size = np.array(heatmap.metadata['input_size'], dtype=np.float32)  # [W, H]
+        
+        # Get heatmap size from the data: shape is (K, H, W), we need [W, H]
+        heatmap_size = np.array([heatmap.data.shape[2], heatmap.data.shape[1]], dtype=np.float32)
+        
+        # Calculate scale_factor (same as MSRAHeatmap.scale_factor)
+        scale_factor = input_size / heatmap_size  # [W, H] / [W, H]
+        
+        # Handle both single point (2,) and multiple points (N, 2)
+        coords = np.asarray(heatmap_coords, dtype=np.float32)
+        original_shape = coords.shape
+        if coords.ndim == 1:
+            coords = coords.reshape(1, -1)
+        
+        # Apply transformation: heatmap space → input space → image space
+        # Step 1: Scale from heatmap to input space (replicates MSRAHeatmap decode)
+        coords_input = coords * scale_factor
+        
+        # Step 2: Transform from input space to image space (replicates decode_heatmaps)
+        coords_normalized = coords_input / input_size  # Normalize to [0, 1]
+        coords_scaled = coords_normalized * input_scale  # Scale to bbox size
+        coords_img = coords_scaled + input_center - 0.5 * input_scale  # Translate to image
+        
+        # Restore original shape
+        if original_shape == (2,):
+            coords_img = coords_img.flatten()
+        
+        return coords_img
+    
     def _reconstruct_gaussian_heatmap(
         self,
         keypoints: npt.NDArray[np.float32],
