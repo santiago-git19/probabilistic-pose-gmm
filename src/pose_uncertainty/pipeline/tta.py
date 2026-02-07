@@ -1,349 +1,387 @@
 """
-Test-Time Augmentation (TTA) for Robust Pose Estimation.
+Test-Time Augmentation (TTA) Engine for Pose Estimation.
 
-This module implements geometric augmentations and inverse transformations
-to enable ensemble predictions at test time.
+This module prepares augmented image batches for downstream model inference
+via adapters defined in ``pose_uncertainty.models.adapters``.  The design
+follows the project's *Separation of Concerns* philosophy:
 
-TTA Methodology:
----------------
-1. Generate N augmented versions of input image:
-   - Horizontal flips
-   - Rotations (±15°)
-   - Scales (0.85× to 1.15×)
-   - Combinations
+* **Core Math only** – uses exclusively NumPy and OpenCV (no PyTorch).
+* **Immutable metadata** – each augmented image carries a frozen
+  ``TTAMetadata`` dataclass so the downstream consumer knows how to
+  invert the transformation on the resulting heatmaps.
+* **Product-cartesian generation** – geometric variants (flip) are
+  combined with photometric variants (brightness, noise, blur) to
+  produce the full augmentation batch.
 
-2. Predict on each augmented image
+Typical usage
+-------------
+>>> from pose_uncertainty.pipeline.tta import TTAEngine
+>>> engine = TTAEngine(config)
+>>> images, metas = engine.prepare_batch(image)
+>>> for img, meta in zip(images, metas):
+...     hm = adapter.predict(img)
+...     if meta.is_flipped:
+...         hm.data = TTAEngine.inverse_flip_heatmap(hm.data, adapter.flip_pairs)
+...     accumulator.append(hm.data)
+>>> mean_heatmap = np.mean(accumulator, axis=0)
 
-3. Apply inverse transforms to predictions
-
-4. Aggregate (average) transformed predictions
-
-Mathematical Intuition:
-----------------------
-For a model f and augmentation T, we have:
-
-    E[f(T(x))] ≈ f(x)  (model equivariance assumption)
-
-By averaging over multiple augmentations:
-
-    y_TTA = (1/N) Σᵢ T_i^(-1) [f(T_i(x))]
-
-We reduce prediction variance at the cost of N× inference time.
-
-References:
-    - "Test-Time Augmentation for Pose Estimation" (various papers)
-    - Krizhevsky et al. "ImageNet Classification with Deep CNNs" (original TTA)
+Inverse-flip logic
+------------------
+The static method ``inverse_flip_heatmap`` replicates *exactly* the
+MMPose ``flip_heatmaps`` behaviour (spatial flip  → channel swap →
+1-pixel shift for alignment) using pure NumPy operations.
 """
 
-from typing import List, Tuple, Optional, Generator
-from dataclasses import dataclass
+from __future__ import annotations
 
+import copy
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Tuple
+
+import cv2
 import numpy as np
 import numpy.typing as npt
-import cv2
-
-from ..utils.types import AugmentationParams, StandardizedHeatmap
-from ..utils.geometry import (
-    construct_affine_matrix,
-    apply_affine_to_heatmap,
-    get_inverse_transform
-)
 
 
-class Augmenter:
+# ---------------------------------------------------------------------------
+# Metadata
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class TTAMetadata:
+    """Immutable metadata attached to every augmented image.
+
+    Attributes
+    ----------
+    is_flipped : bool
+        ``True`` when the image has been horizontally flipped.  The
+        downstream consumer must call ``inverse_flip_heatmap`` on
+        the predicted heatmap before aggregation.
+    transform_type : str
+        Human-readable label for traceability, e.g.
+        ``"original"``, ``"flip"``, ``"flip+noise"``.
+    photometric_params : dict | None
+        Parameters applied during photometric augmentation (for
+        reproducibility / logging).
     """
-    Test-Time Augmentation generator for pose estimation.
-    
-    Generates a set of geometric augmentations (transformations) and provides
-    methods to apply them to images and inverse-transform predictions.
-    
-    Design Principles:
-    -----------------
-    1. **Reproducibility**: Seeded random generation for deterministic augmentations
-    2. **Invertibility**: Every augmentation T has inverse T^(-1)
-    3. **Composability**: Augmentations can be chained (rotation + scale + flip)
-    4. **Pose-Awareness**: Special handling for horizontal flip (swap left/right)
-    
-    Parameters:
-        augmentation_types: List of augmentation names to use.
-                           Options: ["horizontal_flip", "rotation", "scale", "identity"]
-        rotation_range: (min_angle, max_angle) in degrees for rotation sampling.
-        scale_range: (min_scale, max_scale) for uniform scale sampling.
-        num_augmentations: Total number of augmented views to generate.
-        include_original: If True, always include identity transform (no aug).
-        random_state: Random seed for reproducibility.
-    
-    Attributes:
-        augmentations: List of AugmentationParams defining all transforms.
-    
-    Example:
-        ```python
-        aug = Augmenter(
-            augmentation_types=["horizontal_flip", "rotation"],
-            rotation_range=(-15, 15),
-            num_augmentations=8
+
+    is_flipped: bool
+    transform_type: str
+    photometric_params: Optional[Dict[str, Any]] = None
+
+
+# Backwards-compatible alias expected by ``pipeline.refiner``
+Augmenter = None  # will be re-assigned at module level after class def
+
+
+# ---------------------------------------------------------------------------
+# TTAEngine
+# ---------------------------------------------------------------------------
+
+class TTAEngine:
+    """Generate a *cartesian-product* TTA batch from a single input image.
+
+    The engine produces every combination of:
+
+    * **Geometric** variants: original, horizontal flip.
+    * **Photometric** variants: brightness/contrast, Gaussian noise,
+      Gaussian blur.
+
+    Parameters
+    ----------
+    config : dict
+        Hydra-style configuration dictionary.  Recognised keys:
+
+        ``flip.enabled`` (bool, default ``True``)
+            Include a horizontally-flipped copy.
+        ``photometric.brightness.enabled`` (bool, default ``False``)
+        ``photometric.brightness.delta`` (float, default 30.0)
+            Maximum absolute brightness shift (in [0, 255] range).
+        ``photometric.contrast.enabled`` (bool, default ``False``)
+        ``photometric.contrast.range`` (list[float], default ``[0.8, 1.2]``)
+            Multiplicative contrast range.
+        ``photometric.noise.enabled`` (bool, default ``False``)
+        ``photometric.noise.sigma`` (float, default 10.0)
+            Standard deviation of additive Gaussian noise.
+        ``photometric.blur.enabled`` (bool, default ``False``)
+        ``photometric.blur.kernel_size`` (int, default 3)
+            Gaussian blur kernel size (must be odd).
+        ``seed`` (int | None, default ``None``)
+            Random seed for reproducible photometric augmentations.
+            When set, all stochastic operations are deterministic.
+    """
+
+    # ----- construction ----- #
+
+    def __init__(self, config: Dict[str, Any]) -> None:
+        self._cfg = config
+
+        # Geometric
+        flip_cfg = self._cfg.get("flip", {})
+        self._flip_enabled: bool = flip_cfg.get("enabled", True)
+
+        # Photometric sub-configs
+        photo_cfg = self._cfg.get("photometric", {})
+
+        self._brightness_enabled: bool = photo_cfg.get("brightness", {}).get("enabled", False)
+        self._brightness_delta: float = float(photo_cfg.get("brightness", {}).get("delta", 30.0))
+
+        self._contrast_enabled: bool = photo_cfg.get("contrast", {}).get("enabled", False)
+        self._contrast_range: Tuple[float, float] = tuple(
+            photo_cfg.get("contrast", {}).get("range", [0.8, 1.2])
         )
-        
-        # Generate augmented images
-        for aug_img, params in aug.augment_image(image):
-            heatmap = model.predict(aug_img)
-            # Later: apply inverse to heatmap
-        ```
-    """
-    
-    def __init__(
-        self,
-        augmentation_types: List[str],
-        rotation_range: Tuple[float, float] = (-15.0, 15.0),
-        scale_range: Tuple[float, float] = (0.85, 1.15),
-        num_augmentations: int = 8,
-        include_original: bool = True,
-        random_state: Optional[int] = None
-    ) -> None:
-        """
-        Initialize TTA augmenter with specified parameters.
-        
-        Args:
-            augmentation_types: List of augmentation types to apply.
-                Available: ["horizontal_flip", "vertical_flip", "rotation", "scale", "identity"]
-            rotation_range: Min/max rotation angles in degrees (counter-clockwise).
-            scale_range: Min/max uniform scale factors (> 1 = zoom in).
-            num_augmentations: Target number of augmentations to generate.
-            include_original: If True, ensures identity transform is included.
-            random_state: Random seed for reproducible augmentation sampling.
-        
-        Raises:
-            ValueError: If augmentation_types contains unsupported augmentations.
-        """
-        ...
-    
-    def generate_augmentations(self) -> List[AugmentationParams]:
-        """
-        Generate a diverse set of augmentation parameters.
-        
-        Strategy:
-        --------
-        1. If include_original=True, add identity transform
-        2. For each augmentation type:
-           - Sample random parameters (angle, scale)
-           - Optionally combine with other types
-        3. Ensure num_augmentations total
-        
-        Returns:
-            List of AugmentationParams objects defining all transforms.
-        
-        Design Consideration:
-            We balance diversity (cover parameter space) with practicality
-            (avoid extreme transforms that hurt accuracy).
-        """
-        ...
-    
-    def augment_image(
-        self,
-        image: npt.NDArray[np.uint8]
-    ) -> Generator[Tuple[npt.NDArray[np.uint8], AugmentationParams], None, None]:
-        """
-        Apply all augmentations to an image, yielding (augmented_image, params).
-        
-        This is a generator to enable lazy evaluation and memory efficiency.
-        Augmented images are not stored all at once.
-        
-        Args:
-            image: Input RGB image (H, W, 3), uint8.
-        
-        Yields:
-            Tuple of:
-                - Augmented image (same shape and type as input)
-                - AugmentationParams used for this augmentation
-        
-        Implementation:
-            For each AugmentationParams in self.augmentations:
-            1. Construct affine matrix from params
-            2. Apply cv2.warpAffine to image
-            3. Yield result with params (for later inverse transform)
-        
-        Example:
-            ```python
-            for aug_img, params in augmenter.augment_image(image):
-                heatmap_aug = model.predict(aug_img)
-                heatmap_orig = inverse_transform_heatmap(heatmap_aug, params)
-            ```
-        """
-        ...
-    
-    def inverse_transform_heatmap(
-        self,
-        heatmap: StandardizedHeatmap,
-        aug_params: AugmentationParams,
-        output_size: Tuple[int, int]
-    ) -> StandardizedHeatmap:
-        """
-        Apply inverse augmentation to transform heatmap back to original space.
-        
-        Critical for TTA: We apply T to images, predict, then apply T^(-1) to
-        predictions to align all predictions in the same coordinate frame.
-        
-        Mathematical Form:
-        -----------------
-        If we predict on T(image), we get heatmap_aug.
-        To align with original image space:
-        
-            heatmap_orig = T^(-1)(heatmap_aug)
-        
-        Args:
-            heatmap: Prediction on augmented image.
-            aug_params: AugmentationParams that were applied to image.
-            output_size: (height, width) of target space (typically original image size).
-        
-        Returns:
-            Transformed heatmap in original image coordinate frame.
-        
-        Special Handling:
-            - Horizontal flip: Swap left/right keypoints (use model.flip_pairs)
-            - Rotation: Rotate heatmaps by -angle
-            - Scale: Rescale heatmaps by 1/scale
-        """
-        ...
-    
-    def aggregate_heatmaps(
-        self,
-        heatmaps: List[StandardizedHeatmap],
-        method: str = "mean"
-    ) -> StandardizedHeatmap:
-        """
-        Aggregate multiple heatmaps from different augmentations into one.
-        
-        Aggregation Strategy:
-        --------------------
-        After inverse-transforming all predictions to original space, we combine
-        them to get a robust final prediction.
-        
-        Methods:
-            - "mean": Element-wise average (default, most common)
-            - "median": Element-wise median (robust to outliers)
-            - "max": Element-wise maximum (preserves peaks)
-            - "weighted_mean": Weight by confidence scores
-        
-        Args:
-            heatmaps: List of StandardizedHeatmap objects (all same size).
-            method: Aggregation method name.
-        
-        Returns:
-            Single StandardizedHeatmap representing ensemble prediction.
-        
-        Mathematical Form (mean):
-            H_final(x, y, k) = (1/N) Σᵢ H_i(x, y, k)
-        
-        Variance Reduction:
-            By averaging, we reduce variance by factor of √N:
-                Var[H_final] = Var[H_i] / N
-        
-        Implementation Notes:
-            - Ensure all heatmaps have same spatial dimensions
-            - Renormalize after aggregation to maintain probability distribution
-        """
-        ...
-    
-    def visualize_augmentations(
+
+        self._noise_enabled: bool = photo_cfg.get("noise", {}).get("enabled", False)
+        self._noise_sigma: float = float(photo_cfg.get("noise", {}).get("sigma", 10.0))
+
+        self._blur_enabled: bool = photo_cfg.get("blur", {}).get("enabled", False)
+        self._blur_ksize: int = int(photo_cfg.get("blur", {}).get("kernel_size", 3))
+        # Ensure odd kernel
+        if self._blur_ksize % 2 == 0:
+            self._blur_ksize += 1
+
+        # Seed
+        seed = self._cfg.get("seed", None)
+        self._rng = np.random.default_rng(seed)
+
+    # ------------------------------------------------------------------ #
+    # Public API
+    # ------------------------------------------------------------------ #
+
+    def prepare_batch(
         self,
         image: npt.NDArray[np.uint8],
-        save_path: Optional[str] = None
+    ) -> Tuple[List[npt.NDArray[np.uint8]], List[TTAMetadata]]:
+        """Build the full TTA batch from a single input image.
+
+        The batch is the **cartesian product** of geometric base images
+        and photometric variants::
+
+            bases = [original] + ([flipped] if flip enabled)
+            photo = [identity] + [each enabled photometric]
+            batch = [photo(base) for base in bases for photo in photo_ops]
+
+        Parameters
+        ----------
+        image : np.ndarray
+            Input RGB image of shape ``(H, W, 3)``, dtype ``uint8``.
+
+        Returns
+        -------
+        images : list[np.ndarray]
+            Augmented image copies (always ``uint8``).
+        metadata : list[TTAMetadata]
+            Corresponding metadata (same length as *images*).
+        """
+        assert image.ndim == 3 and image.shape[2] == 3, (
+            f"Expected (H, W, 3) uint8 image, got shape {image.shape}"
+        )
+
+        # 1. Build geometric bases ------------------------------------------
+        geo_bases: List[Tuple[npt.NDArray[np.uint8], bool, str]] = [
+            (image.copy(), False, "original"),
+        ]
+        if self._flip_enabled:
+            geo_bases.append((self._apply_flip(image), True, "flip"))
+
+        # 2. Build photometric operations list -------------------------------
+        #    Each entry: (callable, suffix_label, params_dict)
+        photo_ops: List[Tuple[str, Dict[str, Any]]] = [
+            ("identity", {}),
+        ]
+        if self._brightness_enabled:
+            photo_ops.append(("brightness", {"delta": self._brightness_delta}))
+        if self._contrast_enabled:
+            photo_ops.append(("contrast", {"range": self._contrast_range}))
+        if self._noise_enabled:
+            photo_ops.append(("noise", {"sigma": self._noise_sigma}))
+        if self._blur_enabled:
+            photo_ops.append(("blur", {"kernel_size": self._blur_ksize}))
+
+        # 3. Cartesian product -----------------------------------------------
+        batch_images: List[npt.NDArray[np.uint8]] = []
+        batch_meta: List[TTAMetadata] = []
+
+        for base_img, is_flipped, geo_label in geo_bases:
+            for photo_label, photo_params in photo_ops:
+                if photo_label == "identity":
+                    aug_img = base_img.copy()
+                    t_label = geo_label
+                    p_params: Optional[Dict[str, Any]] = None
+                else:
+                    aug_img = self._apply_photometric(
+                        base_img, kind=photo_label, params=photo_params,
+                    )
+                    t_label = f"{geo_label}+{photo_label}"
+                    p_params = photo_params
+
+                batch_images.append(aug_img)
+                batch_meta.append(
+                    TTAMetadata(
+                        is_flipped=is_flipped,
+                        transform_type=t_label,
+                        photometric_params=p_params,
+                    )
+                )
+
+        return batch_images, batch_meta
+
+    # ------------------------------------------------------------------ #
+    # Static utility – inverse flip on heatmaps
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def inverse_flip_heatmap(
+        heatmap: npt.NDArray[np.float32],
+        flip_pairs: List[Tuple[int, int]],
+        shift_heatmap: bool = True,
+    ) -> npt.NDArray[np.float32]:
+        """Reverse a horizontal flip on a heatmap array.
+
+        Replicates the MMPose ``flip_heatmaps`` logic using pure NumPy:
+
+        1. **Spatial flip** – ``np.flip(..., axis=-1)`` mirrors the width
+           dimension.
+        2. **Channel swap** – left/right keypoint channels are exchanged
+           according to *flip_pairs*.
+        3. **1-pixel shift** – ``heatmap[..., 1:] = heatmap[..., :-1]``
+           corrects the half-pixel misalignment introduced by the
+           discrete flip.
+
+        Parameters
+        ----------
+        heatmap : np.ndarray
+            Shape ``(K, H, W)`` – probability maps for *K* keypoints.
+        flip_pairs : list[tuple[int, int]]
+            Symmetric keypoint index pairs, e.g. COCO ``[(1,2), (3,4), ...]``.
+        shift_heatmap : bool
+            Apply the 1-pixel alignment correction (recommended ``True``).
+
+        Returns
+        -------
+        np.ndarray
+            Corrected heatmap of the same shape and dtype.
+        """
+        heatmap = np.ascontiguousarray(heatmap, dtype=np.float32)
+
+        # Step 1: spatial flip along width axis
+        heatmap = np.flip(heatmap, axis=-1).copy()  # copy for contiguity
+
+        # Step 2: swap left ↔ right channels
+        if flip_pairs:
+            flip_indices = list(range(heatmap.shape[0]))
+            for left, right in flip_pairs:
+                flip_indices[left] = right
+                flip_indices[right] = left
+            heatmap = heatmap[flip_indices]
+
+        # Step 3: 1-pixel alignment shift (matches MMPose exactly)
+        if shift_heatmap:
+            heatmap[..., 1:] = heatmap[..., :-1]
+            # Leftmost column zero (information was shifted right)
+            heatmap[..., 0] = 0.0
+
+        return heatmap
+
+    # ------------------------------------------------------------------ #
+    # Private helpers
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _apply_flip(image: npt.NDArray[np.uint8]) -> npt.NDArray[np.uint8]:
+        """Horizontal flip using OpenCV (axis=1)."""
+        return cv2.flip(image, 1)
+
+    def _apply_photometric(
+        self,
+        image: npt.NDArray[np.uint8],
+        *,
+        kind: str,
+        params: Dict[str, Any],
     ) -> npt.NDArray[np.uint8]:
+        """Apply a *single* named photometric augmentation.
+
+        Parameters
+        ----------
+        image : np.ndarray  (H, W, 3) uint8
+        kind  : one of "brightness", "contrast", "noise", "blur"
+        params: parameters dict specific to *kind*
+
+        Returns
+        -------
+        np.ndarray (H, W, 3) uint8
         """
-        Create a grid visualization of all augmented images.
-        
-        Useful for debugging and understanding the augmentation strategy.
-        
-        Args:
-            image: Input image to augment.
-            save_path: Optional path to save visualization (e.g., "aug_grid.png").
-        
-        Returns:
-            Grid image showing all augmentations side-by-side.
-        """
-        ...
+        if kind == "brightness":
+            return self._apply_brightness(image, delta=params["delta"])
+        if kind == "contrast":
+            return self._apply_contrast(image, contrast_range=params["range"])
+        if kind == "noise":
+            return self._apply_noise(image, sigma=params["sigma"])
+        if kind == "blur":
+            return self._apply_blur(image, ksize=params["kernel_size"])
+        raise ValueError(f"Unknown photometric augmentation: {kind!r}")
+
+    # ---- individual photometric transforms ---- #
+
+    def _apply_brightness(
+        self,
+        image: npt.NDArray[np.uint8],
+        delta: float,
+    ) -> npt.NDArray[np.uint8]:
+        """Deterministic brightness shift using the engine's RNG."""
+        d = self._rng.uniform(-delta, delta)
+        img_f = image.astype(np.float32) + d
+        return np.clip(img_f, 0, 255).astype(np.uint8)
+
+    def _apply_contrast(
+        self,
+        image: npt.NDArray[np.uint8],
+        contrast_range: Tuple[float, float],
+    ) -> npt.NDArray[np.uint8]:
+        """Deterministic contrast scaling."""
+        low, high = contrast_range
+        factor = self._rng.uniform(low, high)
+        mean = image.mean()
+        img_f = (image.astype(np.float32) - mean) * factor + mean
+        return np.clip(img_f, 0, 255).astype(np.uint8)
+
+    def _apply_noise(
+        self,
+        image: npt.NDArray[np.uint8],
+        sigma: float,
+    ) -> npt.NDArray[np.uint8]:
+        """Additive Gaussian noise."""
+        noise = self._rng.normal(0, sigma, size=image.shape).astype(np.float32)
+        img_f = image.astype(np.float32) + noise
+        return np.clip(img_f, 0, 255).astype(np.uint8)
+
+    def _apply_blur(
+        self,
+        image: npt.NDArray[np.uint8],
+        ksize: int,
+    ) -> npt.NDArray[np.uint8]:
+        """Gaussian blur via OpenCV."""
+        return cv2.GaussianBlur(image, (ksize, ksize), 0)
+
+    # ------------------------------------------------------------------ #
+    # Repr
+    # ------------------------------------------------------------------ #
+
+    def __repr__(self) -> str:  # pragma: no cover
+        parts = [f"TTAEngine(flip={self._flip_enabled}"]
+        for name, enabled in [
+            ("brightness", self._brightness_enabled),
+            ("contrast", self._contrast_enabled),
+            ("noise", self._noise_enabled),
+            ("blur", self._blur_enabled),
+        ]:
+            if enabled:
+                parts.append(f" {name}=True")
+        return ",".join(parts) + ")"
 
 
-def sample_rotation_angle(
-    min_angle: float,
-    max_angle: float,
-    rng: np.random.RandomState
-) -> float:
-    """
-    Sample a rotation angle from a specified range.
-    
-    Strategy: Uniform sampling from [min_angle, max_angle].
-    
-    Alternative Strategies:
-        - Discrete: Sample from fixed set {-15, -10, -5, 0, 5, 10, 15}
-        - Gaussian: Sample from N(0, σ²) truncated to range
-    
-    Args:
-        min_angle: Minimum rotation in degrees.
-        max_angle: Maximum rotation in degrees.
-        rng: NumPy random state for reproducibility.
-    
-    Returns:
-        Sampled angle in degrees.
-    """
-    ...
-
-
-def sample_scale_factor(
-    min_scale: float,
-    max_scale: float,
-    rng: np.random.RandomState
-) -> float:
-    """
-    Sample a scale factor from a specified range.
-    
-    Sampling Strategy:
-        Log-uniform distribution to ensure symmetric treatment of zoom in/out:
-        
-            log(scale) ~ Uniform(log(min_scale), log(max_scale))
-        
-    Why Log-Uniform?
-        - 0.5× (zoom out) and 2× (zoom in) have equal probability
-        - With uniform sampling, small scales would be under-represented
-    
-    Args:
-        min_scale: Minimum scale factor (e.g., 0.85).
-        max_scale: Maximum scale factor (e.g., 1.15).
-        rng: NumPy random state.
-    
-    Returns:
-        Sampled scale factor.
-    """
-    ...
-
-
-def apply_flip_to_keypoint_indices(
-    heatmap: npt.NDArray[np.float32],
-    flip_pairs: List[Tuple[int, int]]
-) -> npt.NDArray[np.float32]:
-    """
-    Swap left/right keypoint indices after horizontal flip.
-    
-    When an image is flipped horizontally, left becomes right and vice versa.
-    For pose heatmaps, we must swap the channels corresponding to symmetric
-    keypoints.
-    
-    Example:
-        Before flip: Channel 5 = left_shoulder, Channel 6 = right_shoulder
-        After flip + swap: Channel 5 = right_shoulder, Channel 6 = left_shoulder
-    
-    Args:
-        heatmap: Heatmap array (num_keypoints, H, W).
-        flip_pairs: List of (left_idx, right_idx) tuples to swap.
-    
-    Returns:
-        Heatmap with swapped channels (same shape).
-    
-    Implementation:
-        ```python
-        swapped = heatmap.copy()
-        for left, right in flip_pairs:
-            swapped[left], swapped[right] = heatmap[right], heatmap[left]
-        ```
-    """
-    ...
+# -----------------------------------------------------------------------
+# Backward-compatible alias for ``from .tta import Augmenter``
+# (used by ``pipeline.refiner``)
+# -----------------------------------------------------------------------
+Augmenter = TTAEngine
