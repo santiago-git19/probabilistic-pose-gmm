@@ -16,7 +16,7 @@ mixture_model:
 
   # Outer Loop Strategy (Re-sampling stability)
   outer_loop_iterations: 5      # T: Number of bootstrap iterations
-  bootstrap_sample_size: 1000    # Samples per bootstrap iteration
+  bootstrap_sample_size: 200    # Samples per bootstrap iteration
 
   # Uniform Component (Outlier Handling)
   initial_uniform_weight: 0.1   # Initial weight for uniform component

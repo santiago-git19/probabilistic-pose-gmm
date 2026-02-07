@@ -3,7 +3,7 @@
 
 defaults:
   - model: hrnet_w32  # Can be overridden: resnet50, vitpose_small, etc.
-  - tta: default
+  - tta: tta
   - sampling: sampling  # Monte Carlo sampling configuration
   - mixture_model: mixture
   - _self_
@@ -41,25 +41,6 @@ dataset:
   # dataset.annotations="annotations/ochuman_coco_format_val_range_0.00_1.00.json"
   # dataset.images="images"
 
-# Test-Time Adaptation parameters
-tta:
-  # Augmentation strategy
-  enabled: true
-  num_augmentations: 8
-  augmentation_types:
-    - horizontal_flip
-    - rotation
-    - scale
-  
-  # Rotation parameters (degrees)
-  rotation_range: [-15, 15]
-  
-  # Scale parameters (multiplicative factors)
-  scale_range: [0.85, 1.15]
-  
-  # Aggregation method for heatmaps
-  aggregation: mean  # mean, median, weighted_mean
-
 # Mathematical Core Configuration
 math_core:
   # Robust Mixture Model Configuration
@@ -70,12 +51,6 @@ math_core:
   sampling: ${sampling.sampling}
 
   diagnostics_sampling: ${sampling.diagnostics}
-  
-  # Outlier detection
-  outlier:
-    enabled: true
-    method: mahalanobis  # mahalanobis, z_score, isolation_forest
-    threshold: 3.0  # Standard deviations for Mahalanobis distance
 
 
 

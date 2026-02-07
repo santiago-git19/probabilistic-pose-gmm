@@ -13,13 +13,13 @@ sampling:
   # Higher values → better statistical estimates but slower
   # Typical range: 100-1000
   # Academic standard (ETH/CVL): 500
-  num_samples: 5000 # We will use the number of samples defined in config.yaml
+  num_samples: 1000
   
   # Batch size for vectorized rejection sampling
   # Controls memory-computation tradeoff
   # Larger batches → fewer iterations but more memory
   # Recommended: 10 * num_samples for peaked distributions
-  batch_size: 50000
+  batch_size: 10000
   
   # Maximum number of rejection sampling iterations
   # Safety mechanism to prevent infinite loops with pathological heatmaps
