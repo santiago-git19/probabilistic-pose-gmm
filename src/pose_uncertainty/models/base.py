@@ -193,6 +193,97 @@ class BasePoseModel(ABC):
         raise NotImplementedError("Subclasses must implement predict_keypoints()")
     
     @abstractmethod
+    def predict_batch(
+        self,
+        images: List[npt.NDArray[np.uint8]],
+        bboxes: Optional[List[Optional[Tuple[float, float, float, float]]]] = None
+    ) -> List[StandardizedHeatmap]:
+        """
+        Predict pose heatmaps for a batch of images (GPU-optimized).
+        
+        This method processes multiple images in parallel to maximize GPU utilization.
+        It MUST produce identical results to calling predict() sequentially on each image.
+        
+        Benefits:
+            - **GPU Efficiency**: Maximizes parallelism, reduces memory transfers
+            - **Throughput**: 2-5x faster than sequential processing
+            - **Pipelining**: Single preprocessing pass for entire batch
+        
+        Args:
+            images: List of N images, each (H, W, 3) in RGB format, uint8.
+                   Images can have different sizes.
+            bboxes: Optional list of N bounding boxes (x, y, w, h) in COCO format.
+                   If None, uses full image for all. Can mix None and valid boxes.
+        
+        Returns:
+            List of N StandardizedHeatmap objects, one per input image.
+            Order is preserved: output[i] corresponds to images[i].
+        
+        Guarantees:
+            - **Numerical Identity**: np.allclose(predict(img), predict_batch([img])[0])
+            - **Metadata Consistency**: Each heatmap has correct original_size, offsets
+            - **Order Preservation**: Results match input order exactly
+        
+        Implementation Requirements:
+            - Batch preprocessing (avoid per-image loops where possible)
+            - Capture all heatmaps from single forward pass
+            - Distribute metadata correctly per image
+        
+        Example:
+            ```python
+            images = [load_image(path) for path in image_paths]
+            bboxes = [detect_person(img) for img in images]
+            
+            # Sequential (slow)
+            heatmaps_seq = [model.predict(img, box) for img, box in zip(images, bboxes)]
+            
+            # Batch (fast, identical results)
+            heatmaps_batch = model.predict_batch(images, bboxes)
+            
+            assert all(np.allclose(h1.data, h2.data) 
+                      for h1, h2 in zip(heatmaps_seq, heatmaps_batch))
+            ```
+        """
+        raise NotImplementedError("Subclasses must implement predict_batch()")
+    
+    @abstractmethod
+    def predict_keypoints_batch(
+        self,
+        images: List[npt.NDArray[np.uint8]],
+        bboxes: Optional[List[Optional[Tuple[float, float, float, float]]]] = None
+    ) -> Tuple[List[npt.NDArray[np.float32]], List[npt.NDArray[np.float32]]]:
+        """
+        Predict keypoint coordinates for a batch of images (GPU-optimized).
+        
+        Batch version of predict_keypoints(). Processes multiple images in parallel
+        for maximum throughput.
+        
+        Args:
+            images: List of N images, each (H, W, 3) in RGB format, uint8.
+            bboxes: Optional list of N bounding boxes (x, y, w, h) in COCO format.
+        
+        Returns:
+            Tuple of:
+                - keypoints_list: List of N arrays, each (num_keypoints, 2)
+                - scores_list: List of N arrays, each (num_keypoints,)
+        
+        Guarantees:
+            - **Numerical Identity**: Results match predict_keypoints() called sequentially
+            - **Order Preservation**: Output[i] corresponds to images[i]
+            - **Coordinate Space**: All keypoints in original image coordinates
+        
+        Example:
+            ```python
+            images = [img1, img2, img3]
+            keypoints_list, scores_list = model.predict_keypoints_batch(images)
+            
+            for i, (kpts, scores) in enumerate(zip(keypoints_list, scores_list)):
+                print(f"Image {i}: {kpts.shape}, confidence: {scores.mean():.3f}")
+            ```
+        """
+        raise NotImplementedError("Subclasses must implement predict_keypoints_batch()")
+    
+    @abstractmethod
     def decode_heatmaps(
         self,
         heatmap: StandardizedHeatmap,
@@ -552,6 +643,54 @@ class MockPoseModel(BasePoseModel):
             keypoints[:, 1] *= (orig_h / h)
         
         return keypoints, scores
+    
+    def predict_batch(
+        self,
+        images: List[npt.NDArray[np.uint8]],
+        bboxes: Optional[List[Optional[Tuple[float, float, float, float]]]] = None
+    ) -> List[StandardizedHeatmap]:
+        """
+        Batch prediction for mock model (just calls predict() sequentially).
+        
+        Args:
+            images: List of N images.
+            bboxes: Optional list of N bounding boxes.
+        
+        Returns:
+            List of N StandardizedHeatmap objects.
+        """
+        if bboxes is None:
+            bboxes = [None] * len(images)
+        
+        return [self.predict(img, bbox) for img, bbox in zip(images, bboxes)]
+    
+    def predict_keypoints_batch(
+        self,
+        images: List[npt.NDArray[np.uint8]],
+        bboxes: Optional[List[Optional[Tuple[float, float, float, float]]]] = None
+    ) -> Tuple[List[npt.NDArray[np.float32]], List[npt.NDArray[np.float32]]]:
+        """
+        Batch keypoint prediction for mock model (calls predict_keypoints() sequentially).
+        
+        Args:
+            images: List of N images.
+            bboxes: Optional list of N bounding boxes.
+        
+        Returns:
+            Tuple of (keypoints_list, scores_list).
+        """
+        if bboxes is None:
+            bboxes = [None] * len(images)
+        
+        keypoints_list = []
+        scores_list = []
+        
+        for img, bbox in zip(images, bboxes):
+            kpts, scores = self.predict_keypoints(img, bbox)
+            keypoints_list.append(kpts)
+            scores_list.append(scores)
+        
+        return keypoints_list, scores_list
     
     def warmup(self, iterations: int = 3) -> None:
         """No-op for mock model."""
