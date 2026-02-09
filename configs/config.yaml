@@ -3,9 +3,9 @@
 
 defaults:
   - model: hrnet_w32  # Can be overridden: resnet50, vitpose_small, etc.
-  - tta: tta
-  - sampling: sampling  # Monte Carlo sampling configuration
-  - mixture_model: mixture
+  - tta
+  - sampling  # Monte Carlo sampling configuration
+  - mixture
   - _self_
 
 # Random seed for reproducibility
@@ -45,7 +45,7 @@ dataset:
 math_core:
   # Robust Mixture Model Configuration
   # This section controls the RobustGaussianMixture EM algorithm
-  mixture_model: ${mixture_model.mixture_model}
+  mixture_model: ${mixture}
   
   # Monte Carlo Sampling parameters
   sampling: ${sampling.sampling}
@@ -65,6 +65,13 @@ metrics:
   - oks  # Object Keypoint Similarity
   - pck  # Percentage of Correct Keypoints
   - auc  # Area Under Curve
+
+evaluation:
+  n_samples_per_group: 50       # Cuántas imágenes guardar por categoría (Win, Regression...)
+  output_dir: ${paths.project_root}/outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}/eval_results
+  batch_size_mass: 32           # Para la evaluación rápida (Runner Modo 1)
+  batch_size_deep: 1            # OBLIGATORIO 1 para deep profiling (Runner Modo 2)
+  debug_limit: null             # Poner un número (ej. 10) para pruebas rápidas. Null para dataset completo.
 
 # Logging
 logging:

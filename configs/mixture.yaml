@@ -1,22 +1,22 @@
 # EM Algorithm Parameters
-mixture_model: 
-  max_iterations: 100           # Maximum EM iterations before forced termination
-  convergence_threshold: 1e-4   # Stop if |ΔlogL| < threshold
 
-  # Regularization
-  regularization_strength: 1e-4 # σ² added to covariance diagonal (Σ + σ²I)
-  min_component_weight: 1e-3    # Threshold for dead component detection
+max_iterations: 100           # Maximum EM iterations before forced termination
+convergence_threshold: 1e-4   # Stop if |ΔlogL| < threshold
 
-  # Model Selection (AIC/BIC)
-  aic_weight: 0               # Weight for AIC in combined score
-  bic_weight: 1               # Weight for BIC in combined score
+# Regularization
+regularization_strength: 1e-4 # σ² added to covariance diagonal (Σ + σ²I)
+min_component_weight: 1e-3    # Threshold for dead component detection
 
-  # Initialization
-  initialization_method: kmeans # 'kmeans' (scipy.cluster.vq.kmeans2) or 'random'
+# Model Selection (AIC/BIC)
+aic_weight: 0               # Weight for AIC in combined score
+bic_weight: 1               # Weight for BIC in combined score
 
-  # Outer Loop Strategy (Re-sampling stability)
-  outer_loop_iterations: 5      # T: Number of bootstrap iterations
-  bootstrap_sample_size: 200    # Samples per bootstrap iteration
+# Initialization
+initialization_method: kmeans # 'kmeans' (scipy.cluster.vq.kmeans2) or 'random'
 
-  # Uniform Component (Outlier Handling)
-  initial_uniform_weight: 0.1   # Initial weight for uniform component
+# Outer Loop Strategy (Re-sampling stability)
+outer_loop_iterations: 1      # T: Number of bootstrap iterations
+bootstrap_sample_size: 200    # Samples per bootstrap iteration
+
+# Uniform Component (Outlier Handling)
+initial_uniform_weight: 0.1   # Initial weight for uniform component
