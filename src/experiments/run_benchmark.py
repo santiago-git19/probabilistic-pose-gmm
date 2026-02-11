@@ -1,4 +1,4 @@
-"""Run complete evaluation pipeline: Mass Evaluation → Diagnostics → Deep Profiling.
+"""Run complete evaluation pipeline: Mass Evaluation -> Diagnostics -> Deep Profiling.
 
 Usage:
     # Full evaluation
@@ -35,7 +35,7 @@ log = logging.getLogger(__name__)
 def main(cfg: DictConfig) -> None:
     """
     Three-stage evaluation pipeline:
-    1. Mass Evaluation: scalar metrics for the full dataset → results_metadata.parquet
+    1. Mass Evaluation: scalar metrics for the full dataset -> results_metadata.parquet
     2. Diagnostics: select focus groups (Wins, Regressions, High_Uncertainty, Edge_Cases)
     3. Deep Profiling: capture full artefacts (images, heatmaps, GMM params) for selected IDs
     """
@@ -76,26 +76,31 @@ def main(cfg: DictConfig) -> None:
             runner.dataloader = itertools.islice(runner.dataloader, debug_limit)
         
         df = runner.run_mass_evaluation()
-        log.info("      ✓ Saved %d results to %s", len(df), parquet_path.name)
+        log.info("      [OK] Saved %d results to %s", len(df), parquet_path.name)
     
     # -------------------------------------------------------------------------
     # STAGE 2: Diagnostics (select focus groups)
     # -------------------------------------------------------------------------
     log.info("\n[3/3] Diagnostics: Selecting Focus Groups...")
     
-    config_dict = OmegaConf.to_container(cfg, resolve=True)
+    # Extract only the needed config sections to avoid interpolation errors
+    config_dict = {
+        'evaluation': OmegaConf.to_container(cfg.evaluation, resolve=True),
+        'dataset': OmegaConf.to_container(cfg.dataset, resolve=True),
+        'paths': OmegaConf.to_container(cfg.paths, resolve=True)
+    }
     focus_groups = select_focus_groups(str(parquet_path), config_dict)
     
     total_selected = sum(len(ids) for ids in focus_groups.values())
     log.info("      Selected %d images across %d groups:", total_selected, len(focus_groups))
     for group_name, ids in focus_groups.items():
-        log.info("        • %-20s: %3d images", group_name, len(ids))
+        log.info("        - %-20s: %3d images", group_name, len(ids))
     
     # -------------------------------------------------------------------------
     # STAGE 3: Deep Profiling (full artefacts for selected images)
     # -------------------------------------------------------------------------
     if total_selected == 0:
-        log.warning("\n⚠️  No images selected for Deep Profiling.")
+        log.warning("\n[WARNING] No images selected for Deep Profiling.")
         log.warning("   Try adjusting thresholds in diagnostics.py or running more samples.")
         return
     
@@ -103,7 +108,7 @@ def main(cfg: DictConfig) -> None:
     log.info("      This will save ~%.1f MB per image (compressed)", 2.5)
     
     saved_paths = runner.run_deep_profiling(focus_groups)
-    log.info("      ✓ Saved %d analysis packets", len(saved_paths))
+    log.info("      [OK] Saved %d analysis packets", len(saved_paths))
     
     # -------------------------------------------------------------------------
     # Summary
@@ -112,9 +117,9 @@ def main(cfg: DictConfig) -> None:
     log.info("EVALUATION COMPLETE")
     log.info("=" * 70)
     log.info("Output directory: %s", runner.output_dir)
-    log.info("  • results_metadata.parquet  ← scalar metrics")
-    log.info("  • focus_groups_ids.json     ← selected IDs")
-    log.info("  • *.pkl.gz                  ← deep analysis packets")
+    log.info("  - results_metadata.parquet  <- scalar metrics")
+    log.info("  - focus_groups_ids.json     <- selected IDs")
+    log.info("  - *.pkl.gz                  <- deep analysis packets")
     log.info("\nNext step: Launch FiftyOne visualization")
     log.info("  python src/experiments/launch_viz.py")
     log.info("=" * 70)

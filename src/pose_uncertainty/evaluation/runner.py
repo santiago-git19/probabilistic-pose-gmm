@@ -154,18 +154,25 @@ class EvaluationRunner:
         logger.info("Model: %s on %s", model_name, device)
 
         # ---- TTA engine ---------------------------------------------------
-        tta_cfg = OmegaConf.to_container(cfg.get("tta", {}), resolve=True) or {}
+        tta_node = OmegaConf.select(cfg, "tta", default=None)
+        if isinstance(tta_node, DictConfig):
+            tta_cfg = OmegaConf.to_container(tta_node, resolve=True)
+        else:
+            tta_cfg = tta_node or {}
         self.tta_engine = TTAEngine(tta_cfg)
 
         # ---- sampling / mixture config ------------------------------------
-        self.sampling_cfg = OmegaConf.to_container(
-            cfg.get("sampling", cfg.get("math_core", {}).get("sampling", {})),
-            resolve=True,
-        ) if OmegaConf.select(cfg, "sampling", default=None) is not None else {}
-        self.mixture_cfg = OmegaConf.to_container(
-            cfg.get("mixture_model", cfg.get("math_core", {}).get("mixture_model", {})),
-            resolve=True,
-        ) if OmegaConf.select(cfg, "mixture_model", default=None) is not None else {}
+        sampling_node = OmegaConf.select(cfg, "sampling", default=None) or OmegaConf.select(cfg, "math_core.sampling", default=None)
+        if isinstance(sampling_node, DictConfig):
+            self.sampling_cfg = OmegaConf.to_container(sampling_node, resolve=True)
+        else:
+            self.sampling_cfg = sampling_node or {}
+
+        mixture_node = OmegaConf.select(cfg, "mixture_model", default=None) or OmegaConf.select(cfg, "math_core.mixture_model", default=None)
+        if isinstance(mixture_node, DictConfig):
+            self.mixture_cfg = OmegaConf.to_container(mixture_node, resolve=True)
+        else:
+            self.mixture_cfg = mixture_node or {}
 
         # ---- dataloader ----------------------------------------------------
         self.dataloader = dataloader or _build_dataloader(cfg)

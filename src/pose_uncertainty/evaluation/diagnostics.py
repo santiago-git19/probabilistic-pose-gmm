@@ -117,7 +117,7 @@ def select_focus_groups(
 
     # ---- summary ----------------------------------------------------------
     for grp, ids in groups.items():
-        logger.info("  %-20s → %d images", grp, len(ids))
+        logger.info("  %-20s -> %d images", grp, len(ids))
 
     # ---- persist to JSON for traceability ---------------------------------
     output_dir = pq.parent
