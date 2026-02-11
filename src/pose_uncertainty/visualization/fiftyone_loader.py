@@ -106,7 +106,10 @@ def create_evaluation_dataset(
     logger.info("Dataset '%s' contains %d samples", dataset_name, len(dataset))
 
     # ---- launch app -------------------------------------------------------
-    session = fo.launch_app(dataset)
+    session = fo.launch_app(dataset, address="0.0.0.0", remote=True)
+    print("Servidor activo. Presiona Ctrl+C para salir.")
+    session.wait()  # <--- INDISPENSABLE
+
     return dataset
 
 
