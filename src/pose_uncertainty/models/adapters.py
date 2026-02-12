@@ -1281,6 +1281,118 @@ class MMPoseAdapter(BasePoseModel):
             coords_img = coords_img.flatten()
         
         return coords_img
+
+    @staticmethod
+    def transform_heatmap_gaussians_to_image(
+        means: npt.NDArray[np.float32],
+        covariances: npt.NDArray[np.float32],
+        heatmap: StandardizedHeatmap,
+    ) -> Tuple[npt.NDArray[np.float32], npt.NDArray[np.float32]]:
+        """Transform Gaussian parameters from heatmap space to image space.
+
+        Uses the same affine mapping as ``transform_heatmap_coords_to_image``.
+        For each Gaussian:
+
+            $$\mu_{img} = A\mu_{hm} + b, \quad \Sigma_{img} = A\Sigma_{hm}A^T$$
+
+        Args:
+            means: Mean vectors with shape ``(N, 2)`` or ``(2,)``.
+            covariances: Covariance matrices with shape ``(N, 2, 2)`` or ``(2, 2)``.
+            heatmap: Standardized heatmap carrying MMPose transform metadata.
+
+        Returns:
+            Tuple ``(means_img, covs_img)`` in image coordinates.
+        """
+        A, b = MMPoseAdapter._heatmap_to_image_affine(heatmap)
+
+        m = np.asarray(means, dtype=np.float32)
+        c = np.asarray(covariances, dtype=np.float32)
+
+        m_was_1d = (m.ndim == 1)
+        c_was_2d = (c.ndim == 2)
+        if m_was_1d:
+            m = m.reshape(1, -1)
+        if c_was_2d:
+            c = c.reshape(1, 2, 2)
+
+        n = min(len(m), len(c))
+        if n == 0:
+            return m.astype(np.float32), c.astype(np.float32)
+
+        m = m[:n, :2]
+        c = c[:n]
+
+        means_img = (m @ A.T + b).astype(np.float32)
+        covs_img = np.empty((n, 2, 2), dtype=np.float32)
+        for i in range(n):
+            covs_img[i] = (A @ c[i] @ A.T).astype(np.float32)
+
+        if m_was_1d:
+            means_img = means_img.reshape(2,)
+        if c_was_2d:
+            covs_img = covs_img.reshape(2, 2)
+
+        return means_img, covs_img
+
+    @staticmethod
+    def transform_single_heatmap_gaussian_to_image(
+        mean: npt.NDArray[np.float32],
+        covariance: npt.NDArray[np.float32],
+        heatmap: StandardizedHeatmap,
+    ) -> Tuple[npt.NDArray[np.float32], npt.NDArray[np.float32]]:
+        """Transform a single Gaussian from heatmap space to image space.
+
+        This is an additive convenience wrapper over
+        ``transform_heatmap_gaussians_to_image`` that keeps current behavior
+        intact while simplifying single-component usage.
+
+        Args:
+            mean: Mean vector with shape ``(2,)``.
+            covariance: Covariance matrix with shape ``(2, 2)``.
+            heatmap: Standardized heatmap carrying MMPose transform metadata.
+
+        Returns:
+            Tuple ``(mean_img, covariance_img)`` in image coordinates.
+        """
+        mean_img, covariance_img = MMPoseAdapter.transform_heatmap_gaussians_to_image(
+            means=np.asarray(mean, dtype=np.float32),
+            covariances=np.asarray(covariance, dtype=np.float32),
+            heatmap=heatmap,
+        )
+        return mean_img, covariance_img
+
+    @staticmethod
+    def _heatmap_to_image_affine(
+        heatmap: StandardizedHeatmap,
+    ) -> Tuple[npt.NDArray[np.float32], npt.NDArray[np.float32]]:
+        """Return affine transform ``(A, b)`` for heatmap→image mapping."""
+        # Validate metadata existence
+        if heatmap.metadata is None:
+            raise ValueError(
+                "Heatmap metadata is None. Cannot perform coordinate transformation. "
+                "Ensure the heatmap was generated with predict() which stores metadata."
+            )
+
+        required_keys = ['input_center', 'input_scale', 'input_size']
+        missing_keys = [key for key in required_keys if key not in heatmap.metadata]
+        if missing_keys:
+            raise ValueError(
+                f"Heatmap metadata is missing required keys: {missing_keys}. "
+                f"Available keys: {list(heatmap.metadata.keys())}"
+            )
+
+        input_center = np.array(heatmap.metadata['input_center'], dtype=np.float32)
+        input_scale = np.array(heatmap.metadata['input_scale'], dtype=np.float32)
+
+        # Get heatmap size from the data: shape is (K, H, W), use [W, H]
+        heatmap_size = np.array([heatmap.data.shape[2], heatmap.data.shape[1]], dtype=np.float32)
+
+        # Simplified affine for MMPose decode:
+        # coords_img = coords_hm * (input_scale / heatmap_size) + (input_center - 0.5*input_scale)
+        scale = input_scale / heatmap_size
+        A = np.array([[scale[0], 0.0], [0.0, scale[1]]], dtype=np.float32)
+        b = (input_center - 0.5 * input_scale).astype(np.float32)
+        return A, b
     
     def _reconstruct_gaussian_heatmap(
         self,
