@@ -639,6 +639,7 @@ class EvaluationRunner:
             "aggregation": {
                 "heatmap_avg": heatmap_avg,
                 "sampling_points": sampling_all,
+                "mmpose_metadata": metadata_ref,
             },
             "gmm_model": {
                 "n_components": int(n_comp_total),
