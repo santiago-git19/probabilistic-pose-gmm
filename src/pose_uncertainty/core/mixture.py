@@ -712,6 +712,14 @@ def fit_with_outer_loop(
             winning_covs.append(result.best_covariance)
             model_type_counts[result.model_type] += 1
             all_results.append(result)
+
+            # Agregar registro para inspeccionar las covarianzas
+            logger.debug(f"Outer iteration {t+1}: {result.model_type} won")
+            logger.debug(f"Winning covariance (iteration {t+1}):\n{result.best_covariance}")
+            
+            # Verificar si la covarianza contiene valores inválidos
+            if np.any(np.isnan(result.best_covariance)) or np.any(np.isinf(result.best_covariance)):
+                logger.warning(f"Invalid covariance detected in iteration {t+1}: {result.best_covariance}")
             
             logger.debug(f"Outer iteration {t+1}: {result.model_type} won")
         except Exception as e:
@@ -724,12 +732,23 @@ def fit_with_outer_loop(
     # Aggregate results
     aggregated_mean = np.mean(winning_means, axis=0)
     
-    # For covariance, use the mean of covariances + variance of means
-    mean_of_covs = np.mean(winning_covs, axis=0)
-    var_of_means = np.cov(np.array(winning_means).T)
-    if var_of_means.ndim == 0:
-        var_of_means = np.array([[var_of_means, 0], [0, var_of_means]])
-    aggregated_cov = mean_of_covs + var_of_means
+
+    if len(winning_covs) == 1:
+        logger.warning("Only one covariance in winning_covs. Using it directly as aggregated_cov.")
+        aggregated_cov = winning_covs[0]
+    else:
+        # For covariance, use the mean of covariances + variance of means
+        mean_of_covs = np.mean(winning_covs, axis=0)
+        var_of_means = np.cov(np.array(winning_means).T)
+        if var_of_means.ndim == 0:
+            var_of_means = np.array([[var_of_means, 0], [0, var_of_means]])
+        aggregated_cov = mean_of_covs + var_of_means
+
+
+    # Verificar si la covarianza agregada es válida
+    logger.debug(f"Aggregated covariance:\n{aggregated_cov}")
+    if np.any(np.isnan(aggregated_cov)) or np.any(np.isinf(aggregated_cov)):
+        logger.warning(f"Invalid aggregated covariance: {aggregated_cov}")
     
     # Determine dominant model type
     dominant_type = max(model_type_counts, key=model_type_counts.get)
