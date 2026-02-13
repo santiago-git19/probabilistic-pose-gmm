@@ -29,28 +29,38 @@ dataset:
   
   # Alternative: CrowdPose dataset configuration
   # To use CrowdPose, override with:
-  # dataset.name=crowdpose
-  # dataset.root_dir="${hydra:runtime.cwd}/data/crowdpose"
-  # dataset.annotations="json/crowdpose_val.json"
-  # dataset.images="images"
+  #name: crowdpose
+  #root_dir: "${hydra:runtime.cwd}/data/crowdpose"
+  #annotations: "json/crowdpose_val.json"
+  #images: "images"
   
   # Alternative: OCHuman dataset configuration
   # To use OCHuman, override with:
-  # dataset.name=ochuman
-  # dataset.root_dir="${hydra:runtime.cwd}/data/ochuman"
-  # dataset.annotations="annotations/ochuman_coco_format_val_range_0.00_1.00.json"
-  # dataset.images="images"
+  #name: ochuman
+  #root_dir: "${hydra:runtime.cwd}/data/ochuman"
+  #annotations: "annotations/ochuman_coco_format_val_range_0.00_1.00.json"
+  #images: "images"
 
 # Mathematical Core Configuration
 math_core:
   # Robust Mixture Model Configuration
   # This section controls the RobustGaussianMixture EM algorithm
-  mixture_model: ${mixture}
+  mixture_model:
+    max_iterations: ${max_iterations}
+    convergence_threshold: ${convergence_threshold}
+    regularization_strength: ${regularization_strength}
+    min_component_weight: ${min_component_weight}
+    aic_weight: ${aic_weight}
+    bic_weight: ${bic_weight}
+    initialization_method: ${initialization_method}
+    outer_loop_iterations: ${outer_loop_iterations}
+    bootstrap_sample_size: ${bootstrap_sample_size}
+    initial_uniform_weight: ${initial_uniform_weight}
   
   # Monte Carlo Sampling parameters
-  sampling: ${sampling.sampling}
+  sampling: ${sampling}
 
-  diagnostics_sampling: ${sampling.diagnostics}
+  diagnostics_sampling: ${sampling}
 
 
 
@@ -71,7 +81,7 @@ evaluation:
   output_dir: ${paths.project_root}/outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}/eval_results
   batch_size_mass: 32           # Para la evaluación rápida (Runner Modo 1)
   batch_size_deep: 1            # OBLIGATORIO 1 para deep profiling (Runner Modo 2)
-  debug_limit: null             # Poner un número (ej. 10) para pruebas rápidas. Null para dataset completo.
+  debug_limit: 500             # Poner un número (ej. 10) para pruebas rápidas. Null para dataset completo.
 
 # Logging
 logging:

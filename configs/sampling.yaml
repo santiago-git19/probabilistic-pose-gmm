@@ -39,7 +39,7 @@ sampling:
   # T < 1: Sharper (concentrate samples at peaks)
   # T = 1: No modification
   # T > 1: Smoother (explore more)
-  temperature: 0.1
+  temperature: 0.3
   
   # Random seed for reproducibility
   # Set to null for non-deterministic behavior

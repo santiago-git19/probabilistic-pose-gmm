@@ -26,7 +26,7 @@ enabled: true
 
 # Horizontal flip
 flip:
-  enabled: true
+  enabled: false
   flip_mode: heatmap  # Options: heatmap, udp_combined, offset
   shift_heatmap: true  # Shift flipped heatmaps for better alignment
   flip_indices: null  # Indices of symmetric keypoints (e.g., [1, 0, 3, 2, ...])
@@ -35,22 +35,22 @@ flip:
 photometric:
   # Brightness adjustment
   brightness:
-    enabled: false
+    enabled: true
     delta: 30.0  # Maximum absolute shift in [0, 255] range
   
   # Contrast adjustment
   contrast:
-    enabled: false
+    enabled: true
     range: [0.8, 1.2]  # Multiplicative contrast factor range
   
   # Additive Gaussian noise
   noise:
-    enabled: false
+    enabled: true
     sigma: 10.0  # Standard deviation of Gaussian noise
   
   # Gaussian blur
   blur:
-    enabled: false
+    enabled: true
     kernel_size: 3  # Must be odd (auto-corrected if even)
 
 seed: 42

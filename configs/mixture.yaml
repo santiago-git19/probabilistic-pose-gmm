@@ -1,7 +1,7 @@
 # EM Algorithm Parameters
 
 max_iterations: 100           # Maximum EM iterations before forced termination
-convergence_threshold: 1e-4   # Stop if |ΔlogL| < threshold
+convergence_threshold: 1e-3   # Stop if |ΔlogL| < threshold
 
 # Regularization
 regularization_strength: 1e-4 # σ² added to covariance diagonal (Σ + σ²I)
@@ -16,7 +16,7 @@ initialization_method: kmeans # 'kmeans' (scipy.cluster.vq.kmeans2) or 'random'
 
 # Outer Loop Strategy (Re-sampling stability)
 outer_loop_iterations: 1      # T: Number of bootstrap iterations
-bootstrap_sample_size: 200    # Samples per bootstrap iteration
+bootstrap_sample_size: 1000    # Samples per bootstrap iteration
 
 # Uniform Component (Outlier Handling)
-initial_uniform_weight: 0.1   # Initial weight for uniform component
+initial_uniform_weight: 0.2   # Initial weight for uniform component
