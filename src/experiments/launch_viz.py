@@ -43,7 +43,7 @@ def main(cfg: DictConfig) -> None:
     log.info("=" * 70)
     
     # ---- Determine data directory ---------------------------------------------
-    data_dir_cfg = cfg.get("data_dir", None)
+    data_dir_cfg = "outputs\\2026-02-12\\18-08-52" # "outputs\\2026-02-12\\16-35-10"#"outputs\\2026-02-11\\12-40-42"# cfg.get("data_dir", None)
     
     if data_dir_cfg is not None:
         # User explicitly provided path
@@ -84,14 +84,14 @@ def main(cfg: DictConfig) -> None:
             dataset_name=dataset_name,
         )
         log.info("\n" + "=" * 70)
-        log.info("✓ FiftyOne app launched successfully!")
+        log.info("[OK] FiftyOne app launched successfully!")
         log.info("=" * 70)
         log.info("The web UI should open in your browser.")
         log.info("If not, navigate to: http://localhost:5151")
         log.info("\nUseful filters:")
-        log.info("  • Tags → Select sample_type (Wins, Regressions, ...)")
-        log.info("  • Sort by: oks_delta, entropy, nll")
-        log.info("  • View fields: ground_truth (green), prediction_base (red), prediction_ours (blue)")
+        log.info("  - Tags -> Select sample_type (Wins, Regressions, ...)")
+        log.info("  - Sort by: oks_delta, entropy, nll")
+        log.info("  - View fields: ground_truth (green), prediction_base (red), prediction_ours (blue)")
         log.info("\nPress Ctrl+C to stop the server.")
         log.info("=" * 70)
         
