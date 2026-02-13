@@ -123,6 +123,48 @@ def _cfg_to_plain(cfg: Any) -> Any:
     return cfg
 
 
+def _as_plain_dict(node: Any) -> Dict[str, Any]:
+    """Convert a config node to a plain dict; return {} for non-mappings."""
+    if isinstance(node, DictConfig):
+        node = OmegaConf.to_container(node, resolve=True)
+    return node if isinstance(node, dict) else {}
+
+
+def _extract_tta_cfg(cfg: DictConfig) -> Dict[str, Any]:
+    """Build TTA config supporting both namespaced and root-level Hydra layouts.
+
+    Historically, ``defaults: [tta]`` merges keys from ``tta.yaml`` at root.
+    Some callers may instead provide ``cfg.tta`` as a nested node.
+    """
+    # 1) Preferred: namespaced node (cfg.tta)
+    tta_node = OmegaConf.select(cfg, "tta", default=None)
+    tta_cfg = _as_plain_dict(tta_node)
+    if tta_cfg:
+        return tta_cfg
+
+    # 2) Backward-compatible fallback: root-level keys from tta.yaml
+    keys = (
+        "enabled",
+        "flip",
+        "photometric",
+        "seed",
+        "aggregation",
+        "post_processing",
+        "rotation",
+        "scale",
+    )
+    root_cfg: Dict[str, Any] = {}
+    for key in keys:
+        value = OmegaConf.select(cfg, key, default=None)
+        if value is None:
+            continue
+        if isinstance(value, DictConfig):
+            root_cfg[key] = OmegaConf.to_container(value, resolve=True)
+        else:
+            root_cfg[key] = value
+    return root_cfg
+
+
 # ---------------------------------------------------------------------------
 # Main class
 # ---------------------------------------------------------------------------
@@ -154,11 +196,7 @@ class EvaluationRunner:
         logger.info("Model: %s on %s", model_name, device)
 
         # ---- TTA engine ---------------------------------------------------
-        tta_node = OmegaConf.select(cfg, "tta", default=None)
-        if isinstance(tta_node, DictConfig):
-            tta_cfg = OmegaConf.to_container(tta_node, resolve=True)
-        else:
-            tta_cfg = tta_node or {}
+        tta_cfg = _extract_tta_cfg(cfg)
         self.tta_engine = TTAEngine(tta_cfg)
 
         # ---- sampling / mixture config ------------------------------------
@@ -467,6 +505,7 @@ class EvaluationRunner:
         ours_coords = np.zeros((num_kp, 2), dtype=np.float32)
         ours_scores = np.zeros(num_kp, dtype=np.float32)
         all_sampling_points: List[npt.NDArray[np.float32]] = []
+        sampling_points_by_kp: List[npt.NDArray[np.float32]] = []
 
         # Aggregate GMM params across keypoints
         gmm_weights_list: List[npt.NDArray] = []
@@ -487,6 +526,7 @@ class EvaluationRunner:
                     seed=self.sampling_cfg.get("seed", 42),
                 )
                 all_sampling_points.append(samples)
+                sampling_points_by_kp.append(samples.astype(np.float32))
 
                 mixture_res = select_best_model(
                     samples.astype(np.float64),
@@ -516,6 +556,7 @@ class EvaluationRunner:
                 ours_coords[k] = [float(x), float(y)]
                 ours_scores[k] = float(hm_k[y, x])
                 all_sampling_points.append(np.empty((0, 2), dtype=np.float32))
+                sampling_points_by_kp.append(np.empty((0, 2), dtype=np.float32))
 
         # Transform heatmap → image coordinates
         if metadata_ref is not None:
@@ -639,6 +680,7 @@ class EvaluationRunner:
             "aggregation": {
                 "heatmap_avg": heatmap_avg,
                 "sampling_points": sampling_all,
+                "sampling_points_by_kp": sampling_points_by_kp,
                 "mmpose_metadata": metadata_ref,
             },
             "gmm_model": {
@@ -647,6 +689,14 @@ class EvaluationRunner:
                 "means": agg_m,
                 "covariances": agg_c,
             },
+            "gmm_per_kp": [
+                {
+                    "weights": np.array([c.weight for c in mr.components], dtype=np.float64),
+                    "means": np.array([c.mean for c in mr.components], dtype=np.float64),
+                    "covariances": np.array([c.covariance for c in mr.components], dtype=np.float64),
+                }
+                for mr in gmm_results
+            ],
             "config_used": _cfg_to_plain(self.cfg),
         }
 
