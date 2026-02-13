@@ -49,7 +49,7 @@ def main(cfg: DictConfig) -> None:
     # Handle debug limit
     debug_limit = OmegaConf.select(cfg, "evaluation.debug_limit", default=None)
     if debug_limit is not None:
-        log.warning("⚠️  DEBUG MODE: Limited to %d images", debug_limit)
+        log.warning("DEBUG MODE: Limited to %d images", debug_limit)
     
     # -------------------------------------------------------------------------
     # Initialize Runner (builds model + dataloader internally)
