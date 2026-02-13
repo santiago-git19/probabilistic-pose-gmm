@@ -217,37 +217,55 @@ def _build_original_slice(
     sample["group"] = group.element("original")
     _apply_scalars(sample, scalars)
 
-    # GT keypoints (green in FiftyOne colour settings)
-    gt = _nested_array(packet, "ground_truth", "coords")
-    if gt is not None:
-        sample["ground_truth"] = _to_fo_keypoint(gt, w, h, fo)
+    # GT coords with visibility (used for filtering)
+    gt = _nested_array(packet, "ground_truth", "coords")  # (N, 3): x, y, vis
 
-    # Baseline prediction
+    # GT keypoints – labelled per body part + visibility
+    if gt is not None:
+        sample["ground_truth"] = _to_fo_keypoints_labeled(
+            gt, w, h, fo, gt_coords_with_vis=gt,
+        )
+
+    # Baseline prediction – labelled per body part + GT visibility
     base = _nested_array(packet, "predictions", "baseline", "coords")
     if base is not None:
-        sample["prediction_base"] = _to_fo_keypoint(base, w, h, fo)
+        sample["prediction_base"] = _to_fo_keypoints_labeled(
+            base, w, h, fo, gt_coords_with_vis=gt,
+        )
 
-    # Our GMM prediction
+    # Our GMM prediction – labelled per body part + GT visibility
     ours = _nested_array(packet, "predictions", "ours_gmm", "coords")
     if ours is not None:
-        sample["prediction_ours"] = _to_fo_keypoint(ours, w, h, fo)
+        sample["prediction_ours"] = _to_fo_keypoints_labeled(
+            ours, w, h, fo, gt_coords_with_vis=gt,
+        )
 
-    # Uncertainty ellipses on the image (normalised to image dims)
-    gmm = packet.get("gmm_model", {})
-    means, covs = gmm.get("means"), gmm.get("covariances")
-    if means is not None and covs is not None:
-        means_img, covs_img = _map_gmm_to_image_space(
-            packet,
-            np.asarray(means),
-            np.asarray(covs),
-            w,
-            h,
+    # Uncertainty ellipses – labelled per keypoint (+ visibility tags)
+    gmm_per_kp = packet.get("gmm_per_kp")
+    if isinstance(gmm_per_kp, list) and len(gmm_per_kp) > 0:
+        ell = _ellipses_per_kp_labeled(
+            gmm_per_kp, w, h, packet, fo,
+            gt_coords_with_vis=gt,
         )
-        polys = _ellipses_normalised(
-            means_img, covs_img, w, h, fo,
-        )
-        if polys:
-            sample["uncertainty_ellipses"] = fo.Polylines(polylines=polys)
+        if ell is not None:
+            sample["uncertainty_ellipses"] = ell
+    else:
+        # Fallback: legacy concatenated GMM (unlabeled)
+        gmm = packet.get("gmm_model", {})
+        means, covs = gmm.get("means"), gmm.get("covariances")
+        if means is not None and covs is not None:
+            means_img, covs_img = _map_gmm_to_image_space(
+                packet,
+                np.asarray(means),
+                np.asarray(covs),
+                w,
+                h,
+            )
+            polys = _ellipses_normalised(
+                means_img, covs_img, w, h, fo,
+            )
+            if polys:
+                sample["uncertainty_ellipses"] = fo.Polylines(polylines=polys)
 
     return sample
 
@@ -287,16 +305,25 @@ def _build_mix_analysis_slice(
     _apply_scalars(sample, scalars)
 
     # ---- MC samples --> fo.Keypoints (toggleable) --------------------------
-    samp = agg.get("sampling_points")  # (N_total, 2) heatmap coords
-    if (
-        samp is not None
-        and isinstance(samp, np.ndarray)
-        and samp.ndim == 2
-        and samp.shape[0] > 0
-    ):
-        kp_pts = _samples_to_grid_keypoints(
-            samp, n_kp, hm_w, hm_h, rects, grid_w, grid_h,
+    samp_by_kp = agg.get("sampling_points_by_kp")
+    kp_pts: List[List[Tuple[float, float]]] = []
+    if isinstance(samp_by_kp, list) and len(samp_by_kp) > 0:
+        kp_pts = _samples_by_kp_to_grid_keypoints(
+            samp_by_kp, n_kp, hm_w, hm_h, rects, grid_w, grid_h,
         )
+    else:
+        samp = agg.get("sampling_points")  # legacy: (N_total, 2)
+        if (
+            samp is not None
+            and isinstance(samp, np.ndarray)
+            and samp.ndim == 2
+            and samp.shape[0] > 0
+        ):
+            kp_pts = _samples_to_grid_keypoints(
+                samp, n_kp, hm_w, hm_h, rects, grid_w, grid_h,
+            )
+
+    if kp_pts:
         kp_objs = [
             fo.Keypoint(points=pts, label=COCO_KP_NAMES[k])
             for k, pts in enumerate(kp_pts)
@@ -306,20 +333,50 @@ def _build_mix_analysis_slice(
             sample["mc_samples"] = fo.Keypoints(keypoints=kp_objs)
 
     # ---- GMM ellipses --> fo.Polylines (toggleable) -------------------------
-    gmm = packet.get("gmm_model", {})
-    means = gmm.get("means")
-    covs = gmm.get("covariances")
-    if means is not None and covs is not None:
-        means_a = np.asarray(means)
-        covs_a = np.asarray(covs)
-        if means_a.ndim == 2 and covs_a.ndim == 3:
-            assignments = _assign_components_to_kp(means_a, avg_hm[:n_kp])
-            polys = _gmm_to_grid_polylines(
-                means_a, covs_a, assignments, n_kp,
-                hm_w, hm_h, rects, grid_w, grid_h, fo,
-            )
-            if polys:
-                sample["gmm_ellipses"] = fo.Polylines(polylines=polys)
+    gmm_per_kp = packet.get("gmm_per_kp")
+    if isinstance(gmm_per_kp, list) and len(gmm_per_kp) > 0:
+        polys, mode_kps = _gmm_per_kp_to_grid_overlays(
+            gmm_per_kp=gmm_per_kp,
+            n_kp=n_kp,
+            hm_w=hm_w,
+            hm_h=hm_h,
+            rects=rects,
+            grid_w=grid_w,
+            grid_h=grid_h,
+            fo=fo,
+        )
+        if polys:
+            sample["gmm_ellipses"] = fo.Polylines(polylines=polys)
+        if mode_kps:
+            sample["gmm_modes"] = fo.Keypoints(keypoints=mode_kps)
+    else:
+        # Legacy packets: concatenated components only
+        gmm = packet.get("gmm_model", {})
+        means = gmm.get("means")
+        covs = gmm.get("covariances")
+        weights = gmm.get("weights")
+        if means is not None and covs is not None:
+            means_a = np.asarray(means)
+            covs_a = np.asarray(covs)
+            if means_a.ndim == 2 and covs_a.ndim == 3:
+                assignments = _assign_components_to_kp(means_a, avg_hm[:n_kp])
+                polys, mode_kps = _legacy_gmm_to_grid_overlays(
+                    means=means_a,
+                    covs=covs_a,
+                    weights=np.asarray(weights) if weights is not None else None,
+                    assignments=assignments,
+                    n_kp=n_kp,
+                    hm_w=hm_w,
+                    hm_h=hm_h,
+                    rects=rects,
+                    grid_w=grid_w,
+                    grid_h=grid_h,
+                    fo=fo,
+                )
+                if polys:
+                    sample["gmm_ellipses"] = fo.Polylines(polylines=polys)
+                if mode_kps:
+                    sample["gmm_modes"] = fo.Keypoints(keypoints=mode_kps)
 
     return sample
 
@@ -537,6 +594,47 @@ def _samples_to_grid_keypoints(
     return result
 
 
+def _samples_by_kp_to_grid_keypoints(
+    samples_by_kp: List[Any],
+    n_kp: int,
+    hm_w: int,
+    hm_h: int,
+    rects: List[Dict[str, float]],
+    grid_w: int,
+    grid_h: int,
+) -> List[List[Tuple[float, float]]]:
+    """Map per-keypoint MC samples onto the heatmap grid in [0,1]."""
+    rng = np.random.default_rng(42)
+    result: List[List[Tuple[float, float]]] = []
+
+    for k in range(n_kp):
+        if k >= len(rects):
+            result.append([])
+            continue
+        chunk_raw = samples_by_kp[k] if k < len(samples_by_kp) else None
+        chunk = np.asarray(chunk_raw) if chunk_raw is not None else np.empty((0, 2))
+        if chunk.ndim != 2 or chunk.shape[1] < 2 or chunk.shape[0] == 0:
+            result.append([])
+            continue
+
+        if len(chunk) > _MAX_SAMPLES_VIS:
+            idx = rng.choice(len(chunk), _MAX_SAMPLES_VIS, replace=False)
+            chunk = chunk[idx]
+
+        rect = rects[k]
+        pts: List[Tuple[float, float]] = []
+        for x_hm, y_hm in chunk[:, :2]:
+            gx = rect["x0"] + (float(x_hm) / hm_w) * rect["w"]
+            gy = rect["y0"] + (float(y_hm) / hm_h) * rect["h"]
+            pts.append((
+                float(np.clip(gx / grid_w, 0.0, 1.0)),
+                float(np.clip(gy / grid_h, 0.0, 1.0)),
+            ))
+        result.append(pts)
+
+    return result
+
+
 def _assign_components_to_kp(
     means: npt.NDArray,       # (C_total, 2) in heatmap coords
     avg_hm: npt.NDArray,      # (K, H, W)
@@ -597,6 +695,201 @@ def _gmm_to_grid_polylines(
             )
         )
     return polylines
+
+
+def _legacy_gmm_to_grid_overlays(
+    means: npt.NDArray,
+    covs: npt.NDArray,
+    weights: Optional[npt.NDArray],
+    assignments: npt.NDArray,
+    n_kp: int,
+    hm_w: int,
+    hm_h: int,
+    rects: List[Dict[str, float]],
+    grid_w: int,
+    grid_h: int,
+    fo: Any,
+) -> Tuple[List[Any], List[Any]]:
+    """Legacy overlay builder from concatenated GMM arrays.
+
+    Keeps at most 2 ellipses per keypoint and computes one mode per keypoint.
+    """
+    polylines: List[Any] = []
+    mode_keypoints: List[Any] = []
+
+    w_all = np.asarray(weights, dtype=np.float64).reshape(-1) if weights is not None else None
+
+    for k in range(min(n_kp, len(rects))):
+        idx = np.where(assignments == k)[0]
+        if idx.size == 0:
+            continue
+
+        m = means[idx, :2]
+        c = covs[idx, :2, :2]
+        if w_all is not None and w_all.shape[0] >= np.max(idx) + 1:
+            w = np.clip(w_all[idx], 0.0, None)
+        else:
+            w = np.ones(len(idx), dtype=np.float64)
+        s = float(np.sum(w))
+        w = w / s if s > 0 else np.ones(len(idx), dtype=np.float64) / float(len(idx))
+
+        # Keep top-2 components per keypoint
+        if len(idx) > 2:
+            keep = np.argsort(-w)[:2]
+            m = m[keep]
+            c = c[keep]
+            w = w[keep]
+            w = w / np.sum(w)
+
+        rect = rects[k]
+        for j in range(m.shape[0]):
+            verts = _ellipse_vertices(m[j], c[j])
+            if len(verts) == 0:
+                continue
+            mapped: List[Tuple[float, float]] = []
+            for x_hm, y_hm in verts:
+                gx = rect["x0"] + (float(x_hm) / hm_w) * rect["w"]
+                gy = rect["y0"] + (float(y_hm) / hm_h) * rect["h"]
+                mapped.append((
+                    float(np.clip(gx / grid_w, 0.0, 1.0)),
+                    float(np.clip(gy / grid_h, 0.0, 1.0)),
+                ))
+            polylines.append(
+                fo.Polyline(points=[mapped], closed=True, filled=False, label=COCO_KP_NAMES[k])
+            )
+
+        mode_hm = _gmm_mode_on_grid(w, m, c, hm_w, hm_h)
+        if mode_hm is not None:
+            gx = rect["x0"] + (float(mode_hm[0]) / hm_w) * rect["w"]
+            gy = rect["y0"] + (float(mode_hm[1]) / hm_h) * rect["h"]
+            mode_keypoints.append(
+                fo.Keypoint(
+                    points=[(
+                        float(np.clip(gx / grid_w, 0.0, 1.0)),
+                        float(np.clip(gy / grid_h, 0.0, 1.0)),
+                    )],
+                    label=COCO_KP_NAMES[k],
+                )
+            )
+
+    return polylines, mode_keypoints
+
+
+def _gmm_per_kp_to_grid_overlays(
+    gmm_per_kp: List[Any],
+    n_kp: int,
+    hm_w: int,
+    hm_h: int,
+    rects: List[Dict[str, float]],
+    grid_w: int,
+    grid_h: int,
+    fo: Any,
+) -> Tuple[List[Any], List[Any]]:
+    """Create per-keypoint GMM ellipses and mode points on the grid."""
+    polylines: List[Any] = []
+    mode_keypoints: List[Any] = []
+
+    for k in range(min(n_kp, len(rects))):
+        info = gmm_per_kp[k] if k < len(gmm_per_kp) and isinstance(gmm_per_kp[k], dict) else {}
+        weights = np.asarray(info.get("weights", []), dtype=np.float64).reshape(-1)
+        means = np.asarray(info.get("means", []), dtype=np.float64)
+        covs = np.asarray(info.get("covariances", []), dtype=np.float64)
+
+        if means.ndim != 2 or covs.ndim != 3 or means.shape[0] == 0:
+            continue
+
+        n = min(means.shape[0], covs.shape[0], max(1, weights.shape[0]))
+        means = means[:n, :2]
+        covs = covs[:n, :2, :2]
+        if weights.shape[0] < n:
+            w = np.ones(n, dtype=np.float64) / float(n)
+        else:
+            w = weights[:n]
+            w = np.clip(w, 0.0, None)
+            s = float(np.sum(w))
+            w = (w / s) if s > 0 else (np.ones(n, dtype=np.float64) / float(n))
+
+        # Safety: if more than 2 are present in legacy/irregular packets, keep top-2 by weight
+        if n > 2:
+            idx = np.argsort(-w)[:2]
+            means = means[idx]
+            covs = covs[idx]
+            w = w[idx]
+            w = w / np.sum(w)
+
+        rect = rects[k]
+
+        # Ellipses
+        for j in range(len(means)):
+            verts = _ellipse_vertices(means[j], covs[j])
+            if len(verts) == 0:
+                continue
+            mapped: List[Tuple[float, float]] = []
+            for x_hm, y_hm in verts:
+                gx = rect["x0"] + (float(x_hm) / hm_w) * rect["w"]
+                gy = rect["y0"] + (float(y_hm) / hm_h) * rect["h"]
+                mapped.append((
+                    float(np.clip(gx / grid_w, 0.0, 1.0)),
+                    float(np.clip(gy / grid_h, 0.0, 1.0)),
+                ))
+            polylines.append(
+                fo.Polyline(points=[mapped], closed=True, filled=False, label=COCO_KP_NAMES[k])
+            )
+
+        # Mixture mode (numerical argmax on heatmap grid)
+        mode_hm = _gmm_mode_on_grid(w, means, covs, hm_w, hm_h)
+        if mode_hm is not None:
+            gx = rect["x0"] + (float(mode_hm[0]) / hm_w) * rect["w"]
+            gy = rect["y0"] + (float(mode_hm[1]) / hm_h) * rect["h"]
+            mode_keypoints.append(
+                fo.Keypoint(
+                    points=[(
+                        float(np.clip(gx / grid_w, 0.0, 1.0)),
+                        float(np.clip(gy / grid_h, 0.0, 1.0)),
+                    )],
+                    label=COCO_KP_NAMES[k],
+                )
+            )
+
+    return polylines, mode_keypoints
+
+
+def _gmm_mode_on_grid(
+    weights: npt.NDArray,
+    means: npt.NDArray,
+    covs: npt.NDArray,
+    hm_w: int,
+    hm_h: int,
+) -> Optional[Tuple[float, float]]:
+    """Compute mixture mode in heatmap coords via dense grid evaluation."""
+    if means.ndim != 2 or covs.ndim != 3 or means.shape[0] == 0:
+        return None
+
+    yy, xx = np.mgrid[0:hm_h, 0:hm_w]
+    grid = np.stack([xx, yy], axis=-1).astype(np.float64)
+    dens = np.zeros((hm_h, hm_w), dtype=np.float64)
+
+    for i in range(means.shape[0]):
+        mu = means[i, :2].astype(np.float64)
+        cov = covs[i, :2, :2].astype(np.float64)
+        if not np.all(np.isfinite(mu)) or not np.all(np.isfinite(cov)):
+            continue
+        cov = cov + np.eye(2, dtype=np.float64) * 1e-6
+        try:
+            inv = np.linalg.inv(cov)
+            det = float(np.linalg.det(cov))
+        except np.linalg.LinAlgError:
+            continue
+        det = max(det, 1e-12)
+        d = grid - mu
+        q = np.einsum("...i,ij,...j->...", d, inv, d)
+        norm = 1.0 / (2.0 * math.pi * math.sqrt(det))
+        dens += float(weights[i]) * norm * np.exp(-0.5 * q)
+
+    if not np.any(np.isfinite(dens)):
+        return None
+    y, x = np.unravel_index(int(np.nanargmax(dens)), dens.shape)
+    return float(x), float(y)
 
 
 # ===================================================================
@@ -852,4 +1145,126 @@ def _to_fo_keypoint(
         for row in coords
     ]
     return fo.Keypoint(points=pts)
+
+
+_VIS_LABELS = {0: "not_labeled", 1: "occluded", 2: "visible"}
+
+
+def _to_fo_keypoints_labeled(
+    coords: npt.NDArray,
+    img_w: int,
+    img_h: int,
+    fo: Any,
+    *,
+    gt_coords_with_vis: Optional[npt.NDArray] = None,
+) -> Any:
+    """``(N, 2|3)`` array → ``fo.Keypoints`` with **one** ``fo.Keypoint``
+    per body part so that each part can be individually filtered by its
+    ``label`` in the FiftyOne sidebar.
+
+    If *gt_coords_with_vis* is provided (GT array with visibility in the
+    3rd column, COCO convention 0/1/2), a ``visibility`` tag is stored
+    on each keypoint so the user can also filter by visibility.
+    """
+    n_kp = min(coords.shape[0], _N_KP)
+    keypoints: List[Any] = []
+    for k in range(n_kp):
+        x_norm = float(np.clip(coords[k, 0] / img_w, 0.0, 1.0))
+        y_norm = float(np.clip(coords[k, 1] / img_h, 0.0, 1.0))
+
+        # Visibility from GT (or from the 3rd col of coords itself)
+        vis_code = 2  # default visible
+        if gt_coords_with_vis is not None and k < gt_coords_with_vis.shape[0]:
+            vis_code = int(gt_coords_with_vis[k, 2]) if gt_coords_with_vis.shape[1] >= 3 else 2
+        elif coords.shape[1] >= 3:
+            vis_code = int(coords[k, 2])
+        vis_label = _VIS_LABELS.get(vis_code, "unknown")
+
+        kp = fo.Keypoint(
+            points=[(x_norm, y_norm)],
+            label=COCO_KP_NAMES[k],
+        )
+        kp["visibility"] = vis_label
+        kp["visibility_code"] = vis_code
+        kp.tags = [vis_label, COCO_KP_NAMES[k]]
+        keypoints.append(kp)
+
+    return fo.Keypoints(keypoints=keypoints)
+
+
+def _ellipses_per_kp_labeled(
+    gmm_per_kp: List[Dict[str, Any]],
+    img_w: int,
+    img_h: int,
+    packet: Dict[str, Any],
+    fo: Any,
+    *,
+    n_sigma: float = 2.0,
+    gt_coords_with_vis: Optional[npt.NDArray] = None,
+) -> Any:
+    """Build ``fo.Polylines`` with **one polyline per GMM component**,
+    each labeled with the body-part name so that filtering a keypoint
+    also filters its associated uncertainty ellipse.
+
+    If *gt_coords_with_vis* is provided, each polyline also receives a
+    ``visibility`` tag.
+    """
+    n_kp = min(len(gmm_per_kp), _N_KP)
+
+    # We need means/covs in image space.  Attempt MMPose affine first.
+    # Build a combined means/covs array, transform, then split back.
+    all_means: List[npt.NDArray] = []
+    all_covs: List[npt.NDArray] = []
+    comp_kp_idx: List[int] = []  # which keypoint each component belongs to
+    for k in range(n_kp):
+        kp_gmm = gmm_per_kp[k]
+        m = np.asarray(kp_gmm.get("means", np.empty((0, 2))), dtype=np.float64)
+        c = np.asarray(kp_gmm.get("covariances", np.empty((0, 2, 2))), dtype=np.float64)
+        if m.ndim == 1:
+            m = m.reshape(1, -1)
+        if c.ndim == 2:
+            c = c.reshape(1, 2, 2)
+        nc = min(m.shape[0], c.shape[0])
+        for j in range(nc):
+            all_means.append(m[j])
+            all_covs.append(c[j])
+            comp_kp_idx.append(k)
+
+    if not all_means:
+        return None
+
+    means_cat = np.stack(all_means)       # (C_total, 2)
+    covs_cat = np.stack(all_covs)         # (C_total, 2, 2)
+
+    # Transform to image space
+    means_img, covs_img = _map_gmm_to_image_space(
+        packet, means_cat, covs_cat, img_w, img_h,
+    )
+
+    polys: List[Any] = []
+    for i, k in enumerate(comp_kp_idx):
+        verts = _ellipse_vertices(means_img[i], covs_img[i], n_sigma)
+        if len(verts) == 0:
+            continue
+        pts = [
+            (
+                float(np.clip(v[0] / img_w, 0.0, 1.0)),
+                float(np.clip(v[1] / img_h, 0.0, 1.0)),
+            )
+            for v in verts
+        ]
+        tags = [COCO_KP_NAMES[k]]
+        if gt_coords_with_vis is not None and k < gt_coords_with_vis.shape[0]:
+            vis_code = int(gt_coords_with_vis[k, 2]) if gt_coords_with_vis.shape[1] >= 3 else 2
+            tags.append(_VIS_LABELS.get(vis_code, "unknown"))
+        poly = fo.Polyline(
+            points=[pts],
+            closed=True,
+            filled=False,
+            label=COCO_KP_NAMES[k],
+        )
+        poly.tags = tags
+        polys.append(poly)
+
+    return fo.Polylines(polylines=polys) if polys else None
 
