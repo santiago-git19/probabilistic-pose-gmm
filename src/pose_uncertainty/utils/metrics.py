@@ -38,7 +38,7 @@ COCO_SIGMAS = np.array([
     0.026, 0.025, 0.025, 0.035, 0.035, 0.079, 0.079,  # head (0-6)
     0.072, 0.072, 0.062, 0.062,                        # arms (7-10)
     0.107, 0.107, 0.087, 0.087, 0.089, 0.089          # legs (11-16)
-], dtype=np.float32) / 10.0
+], dtype=np.float32)
 
 
 def compute_l2_distance(
