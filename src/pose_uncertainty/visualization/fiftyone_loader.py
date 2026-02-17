@@ -378,6 +378,24 @@ def _build_mix_analysis_slice(
                 if mode_kps:
                     sample["gmm_modes"] = fo.Keypoints(keypoints=mode_kps)
 
+    # ---- GT keypoints on heatmap grid (toggleable) -------------------------
+    gt_on_grid = _image_coords_to_grid_keypoints(
+        packet, "ground_truth", "coords",
+        n_kp=n_kp, hm_w=hm_w, hm_h=hm_h, rects=rects,
+        grid_w=grid_w, grid_h=grid_h, fo=fo,
+    )
+    if gt_on_grid:
+        sample["gt_on_heatmap"] = fo.Keypoints(keypoints=gt_on_grid)
+
+    # ---- Baseline prediction on heatmap grid (toggleable) ------------------
+    base_on_grid = _image_coords_to_grid_keypoints(
+        packet, "predictions", "baseline.coords",
+        n_kp=n_kp, hm_w=hm_w, hm_h=hm_h, rects=rects,
+        grid_w=grid_w, grid_h=grid_h, fo=fo,
+    )
+    if base_on_grid:
+        sample["baseline_on_heatmap"] = fo.Keypoints(keypoints=base_on_grid)
+
     return sample
 
 
@@ -547,6 +565,100 @@ def _render_heatmap_grid(
 # ===================================================================
 # Coordinate mapping – overlay data onto the grid image
 # ===================================================================
+
+def _image_coords_to_grid_keypoints(
+    packet: Dict[str, Any],
+    *nested_keys: str,
+    n_kp: int,
+    hm_w: int,
+    hm_h: int,
+    rects: List[Dict[str, float]],
+    grid_w: int,
+    grid_h: int,
+    fo: Any,
+) -> List[Any]:
+    """Transform image-space coords to heatmap space and map onto the grid.
+
+    This function navigates the packet with *nested_keys* (supports dotted
+    sub-keys, e.g. ``"predictions", "baseline.coords"``), converts the
+    resulting ``(N, 2|3)`` array from image coordinates to heatmap
+    coordinates using ``MMPoseAdapter.transform_image_coords_to_heatmap``,
+    and produces one ``fo.Keypoint`` per body part positioned on the
+    corresponding subplot of the heatmap grid image.
+
+    Returns an empty list if any step fails (missing data / metadata).
+    """
+    # Navigate nested keys, supporting dotted sub-keys
+    obj: Any = packet
+    for key in nested_keys:
+        for sub in key.split("."):
+            if not isinstance(obj, dict):
+                return []
+            obj = obj.get(sub)
+            if obj is None:
+                return []
+    coords_img = obj
+    if not isinstance(coords_img, np.ndarray) or coords_img.ndim != 2:
+        return []
+    coords_img_2d = coords_img[:, :2].astype(np.float32)
+
+    # Also fetch GT visibility (for tags) when available
+    gt_raw = _nested_array(packet, "ground_truth", "coords")
+
+    # Build a temporary StandardizedHeatmap to use the adapter's transform
+    agg = packet.get("aggregation", {})
+    metadata = agg.get("mmpose_metadata") if isinstance(agg, dict) else None
+    avg_hm = agg.get("heatmap_avg")
+    if metadata is None or not isinstance(avg_hm, np.ndarray) or avg_hm.ndim != 3:
+        return []
+
+    try:
+        from ..models.adapters import MMPoseAdapter
+        from ..utils.types import StandardizedHeatmap
+
+        # We need original image size — derive from GT bbox or use heatmap_avg metadata
+        # Use a reasonable fallback; the transform doesn't depend on original_size.
+        ref_hm = StandardizedHeatmap(
+            data=np.asarray(avg_hm, dtype=np.float32),
+            original_size=(1, 1),  # not used by the coordinate transform
+            metadata=metadata,
+        )
+        coords_hm = MMPoseAdapter.transform_image_coords_to_heatmap(
+            coords_img_2d, ref_hm,
+        )
+    except Exception:
+        logger.debug(
+            "Failed to transform image coords to heatmap space for grid overlay",
+            exc_info=True,
+        )
+        return []
+
+    # Map heatmap coords onto the grid — one fo.Keypoint per keypoint
+    kp_objs: List[Any] = []
+    n = min(int(coords_hm.shape[0]), n_kp, len(rects))
+    for k in range(n):
+        x_hm, y_hm = float(coords_hm[k, 0]), float(coords_hm[k, 1])
+        rect = rects[k]
+        gx = rect["x0"] + (x_hm / hm_w) * rect["w"]
+        gy = rect["y0"] + (y_hm / hm_h) * rect["h"]
+        nx = float(np.clip(gx / grid_w, 0.0, 1.0))
+        ny = float(np.clip(gy / grid_h, 0.0, 1.0))
+
+        kp = fo.Keypoint(
+            points=[(nx, ny)],
+            label=COCO_KP_NAMES[k],
+        )
+        # Add visibility info from GT if available
+        if gt_raw is not None and k < gt_raw.shape[0] and gt_raw.shape[1] >= 3:
+            vis_code = int(gt_raw[k, 2])
+            vis_label = _VIS_LABELS.get(vis_code, "unknown")
+            kp["visibility"] = vis_label
+            kp.tags = [vis_label, COCO_KP_NAMES[k]]
+        else:
+            kp.tags = [COCO_KP_NAMES[k]]
+        kp_objs.append(kp)
+    return kp_objs
+
 
 def _samples_to_grid_keypoints(
     samples_all: npt.NDArray,   # (N_total, 2) in heatmap-pixel coords
