@@ -87,21 +87,48 @@ def _build_dataloader(cfg: DictConfig) -> Any:
 
 def _gt_to_arrays(
     sample: ImageSample,
+    target_keypoint_names: Optional[List[str]] = None,
+    target_num_keypoints: Optional[int] = None,
 ) -> Tuple[npt.NDArray[np.float32], npt.NDArray[np.int32], float]:
-    """Extract (coords_Nx2, visibility_N, area) from an ImageSample."""
+    """Extract (coords_Nx2, visibility_N, area) aligned to the target keypoint space.
+
+    If ``target_keypoint_names`` is provided, keypoints are matched by name.
+    This is required for cross-dataset evaluation (e.g., CrowdPose 14-point GT
+    against COCO-17 model outputs), where keypoint indices are not compatible.
+    """
     kps = sample.ground_truth_keypoints or []
-    n = len(kps)
+
+    if target_keypoint_names is not None:
+        n = len(target_keypoint_names)
+        name_to_idx = {name: idx for idx, name in enumerate(target_keypoint_names)}
+    elif target_num_keypoints is not None:
+        n = int(target_num_keypoints)
+        name_to_idx = None
+    else:
+        n = (max((kp.id for kp in kps), default=-1) + 1) if kps else 0
+        name_to_idx = None
+
     coords = np.zeros((n, 2), dtype=np.float32)
     vis = np.zeros(n, dtype=np.int32)
+
     for kp in kps:
-        coords[kp.id] = [kp.x, kp.y]
-        # Map confidence → COCO visibility (0/1/2)
-        if kp.confidence >= 0.9:
-            vis[kp.id] = 2
-        elif kp.confidence > 0.0:
-            vis[kp.id] = 1
+        if name_to_idx is not None:
+            idx = name_to_idx.get(kp.name)
+            if idx is None:
+                continue
         else:
-            vis[kp.id] = 0
+            idx = int(kp.id)
+            if idx < 0 or idx >= n:
+                continue
+
+        coords[idx] = [kp.x, kp.y]
+        if kp.confidence >= 0.9:
+            vis[idx] = 2
+        elif kp.confidence > 0.0:
+            vis[idx] = 1
+        else:
+            vis[idx] = 0
+
     # Area from bbox (x, y, w, h)
     _, _, w, h = sample.bbox
     area = float(w * h)
@@ -257,7 +284,11 @@ class EvaluationRunner:
         """Run full pipeline on one sample, return scalar metrics dict."""
         image = sample.image_array
         bbox = sample.bbox
-        gt_coords, vis, area = _gt_to_arrays(sample)
+        gt_coords, vis, area = _gt_to_arrays(
+            sample,
+            target_keypoint_names=self.model.keypoint_names,
+            target_num_keypoints=self.model.num_keypoints,
+        )
 
         if area < 1.0:
             return None  # degenerate bbox
@@ -459,7 +490,11 @@ class EvaluationRunner:
         """Build a complete analysis packet for one image."""
         image = sample.image_array
         bbox = sample.bbox
-        gt_coords, vis, area = _gt_to_arrays(sample)
+        gt_coords, vis, area = _gt_to_arrays(
+            sample,
+            target_keypoint_names=self.model.keypoint_names,
+            target_num_keypoints=self.model.num_keypoints,
+        )
         timestamp = datetime.datetime.now().isoformat()
 
         # 1) Baseline -------------------------------------------------------

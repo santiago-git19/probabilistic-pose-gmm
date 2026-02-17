@@ -1283,6 +1283,91 @@ class MMPoseAdapter(BasePoseModel):
         return coords_img
 
     @staticmethod
+    def transform_image_coords_to_heatmap(
+        image_coords: npt.NDArray[np.float32],
+        heatmap: StandardizedHeatmap,
+    ) -> npt.NDArray[np.float32]:
+        """Transform coordinates from original image space to heatmap space.
+
+        This is the **exact inverse** of ``transform_heatmap_coords_to_image``.
+
+        Mathematical Derivation
+        -----------------------
+        The forward mapping (heatmap → image) is an affine transform::
+
+            coords_img = A · coords_hm + b
+
+        with::
+
+            A = diag(input_scale / heatmap_size)
+            b = input_center − 0.5 · input_scale
+
+        Therefore the inverse is::
+
+            coords_hm = A⁻¹ · (coords_img − b)
+                      = (coords_img − input_center + 0.5 · input_scale)
+                        × (heatmap_size / input_scale)
+
+        Args:
+            image_coords: Coordinates in image space, shape ``(N, 2)`` or ``(2,)``.
+                          Format: ``[x, y]``.
+            heatmap: ``StandardizedHeatmap`` carrying the same metadata produced
+                     by ``predict()``.
+
+        Returns:
+            Coordinates in heatmap space, same shape as input.
+
+        Raises:
+            ValueError: If metadata is missing required keys.
+
+        Example::
+
+            gt_image = np.array([[150.3, 200.1]])
+            gt_hm = MMPoseAdapter.transform_image_coords_to_heatmap(gt_image, heatmap)
+            # gt_hm is now in heatmap pixel coordinates
+        """
+        if heatmap.metadata is None:
+            raise ValueError(
+                "Heatmap metadata is None. Cannot perform coordinate transformation. "
+                "Ensure the heatmap was generated with predict() which stores metadata."
+            )
+
+        required_keys = ['input_center', 'input_scale', 'input_size']
+        missing_keys = [k for k in required_keys if k not in heatmap.metadata]
+        if missing_keys:
+            raise ValueError(
+                f"Heatmap metadata is missing required keys: {missing_keys}. "
+                f"Available keys: {list(heatmap.metadata.keys())}"
+            )
+
+        input_center = np.array(heatmap.metadata['input_center'], dtype=np.float32)
+        input_scale = np.array(heatmap.metadata['input_scale'], dtype=np.float32)
+
+        # heatmap_size as [W, H]
+        heatmap_size = np.array(
+            [heatmap.data.shape[2], heatmap.data.shape[1]], dtype=np.float32
+        )
+
+        # Handle both single point (2,) and multiple points (N, 2)
+        coords = np.asarray(image_coords, dtype=np.float32)
+        original_shape = coords.shape
+        if coords.ndim == 1:
+            coords = coords.reshape(1, -1)
+
+        # Inverse affine:
+        #   coords_hm = (coords_img - b) / A
+        # where A = diag(input_scale / heatmap_size), b = input_center - 0.5 * input_scale
+        b = input_center - 0.5 * input_scale
+        inv_scale = heatmap_size / input_scale  # element-wise: A⁻¹ diagonal
+
+        coords_hm = (coords - b) * inv_scale
+
+        if original_shape == (2,):
+            coords_hm = coords_hm.flatten()
+
+        return coords_hm
+
+    @staticmethod
     def transform_heatmap_gaussians_to_image(
         means: npt.NDArray[np.float32],
         covariances: npt.NDArray[np.float32],
@@ -1293,7 +1378,7 @@ class MMPoseAdapter(BasePoseModel):
         Uses the same affine mapping as ``transform_heatmap_coords_to_image``.
         For each Gaussian:
 
-            $$\mu_{img} = A\mu_{hm} + b, \quad \Sigma_{img} = A\Sigma_{hm}A^T$$
+            $$\\mu_{img} = A\\mu_{hm} + b, \\quad \\Sigma_{img} = A\\Sigma_{hm}A^T$$
 
         Args:
             means: Mean vectors with shape ``(N, 2)`` or ``(2,)``.
