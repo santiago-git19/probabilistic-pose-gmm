@@ -42,6 +42,11 @@ from tqdm import tqdm
 # ---- project imports -------------------------------------------------------
 from ..models.adapters import create_model_adapter, MMPoseAdapter
 from ..pipeline.tta import TTAEngine, TTAMetadata
+from ..pipeline.scale_tta import (
+    ScaleAugConfig,
+    ScaleAugmentor,
+    compute_heatmap_confidence,
+)
 from ..core.sampling import sample_from_heatmap
 from ..core.mixture import select_best_model, fit_with_outer_loop
 from ..utils.metrics import (
@@ -57,6 +62,14 @@ from . import storage
 from .storage import AnalysisPacket
 
 logger = logging.getLogger(__name__)
+
+# COCO keypoint names (17 keypoints)
+COCO_KEYPOINT_NAMES = [
+    "nose", "left_eye", "right_eye", "left_ear", "right_ear",
+    "left_shoulder", "right_shoulder", "left_elbow", "right_elbow",
+    "left_wrist", "right_wrist", "left_hip", "right_hip",
+    "left_knee", "right_knee", "left_ankle", "right_ankle"
+]
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -133,6 +146,30 @@ def _gt_to_arrays(
     _, _, w, h = sample.bbox
     area = float(w * h)
     return coords, vis, area
+
+
+def _flip_bbox(
+    bbox: Tuple[float, float, float, float],
+    image_width: int,
+) -> Tuple[float, float, float, float]:
+    """Mirror a COCO-format bbox (x, y, w, h) horizontally."""
+    x, y, w, h = bbox
+    return (float(image_width - x - w), y, w, h)
+
+
+def _build_tta_bboxes(
+    aug_metas: List[TTAMetadata],
+    bbox: Tuple[float, float, float, float],
+    image_width: int,
+) -> List[Tuple[float, float, float, float]]:
+    """Return one bbox per augmentation, flipping when needed."""
+    bboxes: List[Tuple[float, float, float, float]] = []
+    for meta in aug_metas:
+        if meta.is_flipped:
+            bboxes.append(_flip_bbox(bbox, image_width))
+        else:
+            bboxes.append(bbox)
+    return bboxes
 
 
 def _resolve_output_dir(cfg: DictConfig) -> Path:
@@ -226,6 +263,16 @@ class EvaluationRunner:
         tta_cfg = _extract_tta_cfg(cfg)
         self.tta_engine = TTAEngine(tta_cfg)
 
+        # ---- Scale TTA ---------------------------------------------------
+        scale_cfg_raw = tta_cfg.get("scale", {})
+        self.scale_aug = ScaleAugmentor(ScaleAugConfig.from_dict(scale_cfg_raw))
+        if self.scale_aug.enabled:
+            logger.info(
+                "Scale TTA enabled: scales=%s, aggregation=%s",
+                self.scale_aug.config.scales,
+                self.scale_aug.config.aggregation,
+            )
+
         # ---- sampling / mixture config ------------------------------------
         sampling_node = OmegaConf.select(cfg, "sampling", default=None) or OmegaConf.select(cfg, "math_core.sampling", default=None)
         if isinstance(sampling_node, DictConfig):
@@ -296,24 +343,68 @@ class EvaluationRunner:
         # 1) Baseline prediction (single forward pass) ---------------------
         base_kps, base_scores = self.model.predict_keypoints(image, bbox=bbox)
         base_coords_2d = base_kps[:, :2] if base_kps.ndim == 2 else base_kps
-        oks_base = compute_oks(base_coords_2d, gt_coords, vis, area)
+        oks_base, per_kp_oks_base = compute_oks(base_coords_2d, gt_coords, vis, area)
 
         # 2) TTA -----------------------------------------------------------
-        aug_images, aug_metas = self.tta_engine.prepare_batch(image)
-        heatmaps_list = self.model.predict_batch(aug_images, bboxes=[bbox] * len(aug_images))
+        img_h, img_w = image.shape[:2]
+        scaled_bboxes = self.scale_aug.get_scaled_bboxes(bbox, img_h, img_w)
 
-        # Inverse-flip and average
-        accum: List[npt.NDArray[np.float32]] = []
+        heatmaps_per_scale: List[npt.NDArray[np.float32]] = []
+        confs_per_scale: List[npt.NDArray[np.float64]] = []
+        metadata_per_scale: List[Optional[Dict[str, Any]]] = []
         metadata_ref = None
-        for std_hm, meta in zip(heatmaps_list, aug_metas):
-            hm = std_hm.data.copy()
-            if meta.is_flipped:
-                hm = TTAEngine.inverse_flip_heatmap(hm, self.model.flip_pairs)
-            accum.append(hm)
-            if metadata_ref is None and std_hm.metadata is not None:
-                metadata_ref = std_hm.metadata
 
-        heatmap_avg = np.mean(accum, axis=0).astype(np.float32)
+        for sbbox in scaled_bboxes:
+            aug_images, aug_metas = self.tta_engine.prepare_batch(image)
+            tta_bboxes = _build_tta_bboxes(aug_metas, sbbox, img_w)
+            heatmaps_list = self.model.predict_batch(aug_images, bboxes=tta_bboxes)
+
+            # Inverse-flip and average within this scale
+            accum: List[npt.NDArray[np.float32]] = []
+            scale_metadata = None
+            for std_hm, meta in zip(heatmaps_list, aug_metas):
+                hm = std_hm.data.copy()
+                if meta.is_flipped:
+                    hm = TTAEngine.inverse_flip_heatmap(hm, self.model.flip_pairs)
+                accum.append(hm)
+                # Prefer metadata from a non-flipped prediction for this scale
+                if scale_metadata is None and not meta.is_flipped and std_hm.metadata is not None:
+                    scale_metadata = std_hm.metadata
+            # Fallback: any metadata from this scale
+            if scale_metadata is None:
+                for std_hm in heatmaps_list:
+                    if std_hm.metadata is not None:
+                        scale_metadata = std_hm.metadata
+                        break
+
+            metadata_per_scale.append(scale_metadata)
+
+            # Track identity-scale metadata for final coord transform
+            is_identity = all(abs(a - b) < 1.0 for a, b in zip(sbbox, bbox))
+            if is_identity and scale_metadata is not None:
+                metadata_ref = scale_metadata
+
+            scale_avg = np.mean(accum, axis=0).astype(np.float32)
+            heatmaps_per_scale.append(scale_avg)
+            confs_per_scale.append(compute_heatmap_confidence(
+                scale_avg,
+                sharpness_scale=self.scale_aug.config.sharpness_scale,
+                epsilon=self.scale_aug.config.epsilon,
+                peak_exponent=self.scale_aug.config.peak_exponent,
+                sharpness_exponent=self.scale_aug.config.sharpness_exponent,
+            ))
+
+        # Fallback: use first available metadata if no identity scale found
+        if metadata_ref is None:
+            metadata_ref = next((m for m in metadata_per_scale if m is not None), None)
+
+        # Aggregate across scales (confidence-weighted)
+        if self.scale_aug.enabled and len(scaled_bboxes) > 1:
+            heatmap_avg = self.scale_aug.aggregate(
+                heatmaps_per_scale, confs_per_scale, metadata_per_scale, metadata_ref
+            )
+        else:
+            heatmap_avg = heatmaps_per_scale[0]
 
         # 3) Per-keypoint sampling + GMM -----------------------------------
         num_kp = heatmap_avg.shape[0]
@@ -368,8 +459,11 @@ class EvaluationRunner:
                 logger.debug("Coord transform failed; using raw heatmap coords")
 
         # 4) Scalar metrics ------------------------------------------------
-        oks_ours = compute_oks(ours_coords[:, :2], gt_coords, vis, area)
+        oks_ours, per_kp_oks_ours = compute_oks(ours_coords[:, :2], gt_coords, vis, area)
         delta_oks = oks_ours - oks_base
+        
+        # Per-keypoint delta OKS
+        per_kp_delta_oks = per_kp_oks_ours - per_kp_oks_base
 
         # Aggregate GMM metrics over keypoints
         all_weights: List[npt.NDArray] = []
@@ -412,7 +506,8 @@ class EvaluationRunner:
                     pass
         nll_val = nll_val / max(len(gmm_results), 1)
 
-        return {
+        # Build metrics dict with per-keypoint OKS values
+        metrics_dict = {
             "image_id": sample.image_id,
             "dataset": sample.dataset_source,
             "oks_base": float(oks_base),
@@ -423,6 +518,15 @@ class EvaluationRunner:
             "covariance_vol": float(cov_vol),
             "n_components": int(n_components),
         }
+        
+        # Add per-keypoint OKS values with COCO keypoint names
+        for i, kp_name in enumerate(COCO_KEYPOINT_NAMES):
+            if i < len(per_kp_oks_base):
+                metrics_dict[f"oks_base_{kp_name}"] = float(per_kp_oks_base[i]) if not np.isnan(per_kp_oks_base[i]) else None
+                metrics_dict[f"oks_ours_{kp_name}"] = float(per_kp_oks_ours[i]) if not np.isnan(per_kp_oks_ours[i]) else None
+                metrics_dict[f"delta_oks_{kp_name}"] = float(per_kp_delta_oks[i]) if not np.isnan(per_kp_delta_oks[i]) else None
+        
+        return metrics_dict
 
     # ====================================================================
     # Stage 2 – Deep Profiling (full artefacts)
@@ -500,40 +604,87 @@ class EvaluationRunner:
         # 1) Baseline -------------------------------------------------------
         base_kps, base_scores = self.model.predict_keypoints(image, bbox=bbox)
         base_coords_2d = base_kps[:, :2] if base_kps.ndim == 2 else base_kps
-        oks_base = compute_oks(base_coords_2d, gt_coords, vis, area)
+        oks_base, per_kp_oks_base = compute_oks(base_coords_2d, gt_coords, vis, area)
         base_score_mean = float(np.mean(base_scores))
 
         # 2) TTA (capture everything) ---------------------------------------
-        aug_images, aug_metas = self.tta_engine.prepare_batch(image)
-        std_heatmaps = self.model.predict_batch(
-            aug_images, bboxes=[bbox] * len(aug_images)
-        )
+        img_h, img_w = image.shape[:2]
+        scaled_bboxes = self.scale_aug.get_scaled_bboxes(bbox, img_h, img_w)
 
         tta_data: List[Dict[str, Any]] = []
-        accum: List[npt.NDArray[np.float32]] = []
+        heatmaps_per_scale: List[npt.NDArray[np.float32]] = []
+        confs_per_scale: List[npt.NDArray[np.float64]] = []
+        metadata_per_scale: List[Optional[Dict[str, Any]]] = []
         metadata_ref = None
 
-        for idx, (aug_img, meta, std_hm) in enumerate(
-            zip(aug_images, aug_metas, std_heatmaps)
-        ):
-            hm = std_hm.data.copy()
-            if meta.is_flipped:
-                hm = TTAEngine.inverse_flip_heatmap(hm, self.model.flip_pairs)
-            accum.append(hm)
-            if metadata_ref is None and std_hm.metadata is not None:
-                metadata_ref = std_hm.metadata
+        for scale_idx, sbbox in enumerate(scaled_bboxes):
+            aug_images, aug_metas = self.tta_engine.prepare_batch(image)
+            tta_bboxes = _build_tta_bboxes(aug_metas, sbbox, img_w)
+            std_heatmaps = self.model.predict_batch(
+                aug_images, bboxes=tta_bboxes
+            )
 
-            tta_entry: Dict[str, Any] = {
-                "aug_id": idx,
-                "name": meta.transform_type,
-                "params": meta.photometric_params or {},
-                "image": aug_img,        # RGB array (will be JPEG-compressed in storage)
-                "heatmap": hm,           # (K, H, W) float32  (→ float16 in storage)
-                "pred_coords": std_hm.data.mean(axis=(1, 2)),  # placeholder
-            }
-            tta_data.append(tta_entry)
+            accum: List[npt.NDArray[np.float32]] = []
+            scale_metadata = None
 
-        heatmap_avg = np.mean(accum, axis=0).astype(np.float32)
+            for idx, (aug_img, meta, std_hm) in enumerate(
+                zip(aug_images, aug_metas, std_heatmaps)
+            ):
+                hm = std_hm.data.copy()
+                if meta.is_flipped:
+                    hm = TTAEngine.inverse_flip_heatmap(hm, self.model.flip_pairs)
+                accum.append(hm)
+                # Prefer metadata from a non-flipped prediction for this scale
+                if scale_metadata is None and not meta.is_flipped and std_hm.metadata is not None:
+                    scale_metadata = std_hm.metadata
+
+                tta_entry: Dict[str, Any] = {
+                    "aug_id": len(tta_data),
+                    "scale_idx": scale_idx,
+                    "scale_bbox": list(sbbox),
+                    "name": meta.transform_type,
+                    "params": meta.photometric_params or {},
+                    "image": aug_img,
+                    "heatmap": hm,
+                    "pred_coords": std_hm.data.mean(axis=(1, 2)),
+                }
+                tta_data.append(tta_entry)
+
+            # Fallback: any metadata from this scale
+            if scale_metadata is None:
+                for std_hm in std_heatmaps:
+                    if std_hm.metadata is not None:
+                        scale_metadata = std_hm.metadata
+                        break
+
+            metadata_per_scale.append(scale_metadata)
+
+            # Track identity-scale metadata for final coord transform
+            is_identity = all(abs(a - b) < 1.0 for a, b in zip(sbbox, bbox))
+            if is_identity and scale_metadata is not None:
+                metadata_ref = scale_metadata
+
+            scale_avg = np.mean(accum, axis=0).astype(np.float32)
+            heatmaps_per_scale.append(scale_avg)
+            confs_per_scale.append(compute_heatmap_confidence(
+                scale_avg,
+                sharpness_scale=self.scale_aug.config.sharpness_scale,
+                epsilon=self.scale_aug.config.epsilon,
+                peak_exponent=self.scale_aug.config.peak_exponent,
+                sharpness_exponent=self.scale_aug.config.sharpness_exponent,
+            ))
+
+        # Fallback: use first available metadata if no identity scale found
+        if metadata_ref is None:
+            metadata_ref = next((m for m in metadata_per_scale if m is not None), None)
+
+        # Aggregate across scales
+        if self.scale_aug.enabled and len(scaled_bboxes) > 1:
+            heatmap_avg = self.scale_aug.aggregate(
+                heatmaps_per_scale, confs_per_scale, metadata_per_scale, metadata_ref
+            )
+        else:
+            heatmap_avg = heatmaps_per_scale[0]
 
         # 3) Per-keypoint sampling + GMM -----------------------------------
         num_kp = heatmap_avg.shape[0]
@@ -609,7 +760,7 @@ class EvaluationRunner:
             except Exception:
                 logger.debug("Coord transform failed; raw heatmap coords used")
 
-        oks_ours = compute_oks(ours_coords[:, :2], gt_coords, vis, area)
+        oks_ours, per_kp_oks_ours = compute_oks(ours_coords[:, :2], gt_coords, vis, area)
         ours_score_mean = float(np.mean(ours_scores))
 
         # Aggregate GMM info -----------------------------------------------
@@ -710,6 +861,8 @@ class EvaluationRunner:
                 "nll": float(nll_val),
                 "entropy": float(entropy_val),
                 "covariance_volume": float(cov_vol),
+                "per_kp_oks_ours": per_kp_oks_ours,
+                "per_kp_oks_base": per_kp_oks_base,
             },
             "tta_data": tta_data,
             "aggregation": {

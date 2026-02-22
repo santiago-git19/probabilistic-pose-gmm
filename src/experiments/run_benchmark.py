@@ -27,6 +27,7 @@ sys.path.insert(0, str(project_root))
 
 from src.pose_uncertainty.evaluation.runner import EvaluationRunner
 from src.pose_uncertainty.evaluation.diagnostics import select_focus_groups
+from src.pose_uncertainty.tracking import wandb_run, log_metrics
 
 log = logging.getLogger(__name__)
 
@@ -50,79 +51,110 @@ def main(cfg: DictConfig) -> None:
     debug_limit = OmegaConf.select(cfg, "evaluation.debug_limit", default=None)
     if debug_limit is not None:
         log.warning("DEBUG MODE: Limited to %d images", debug_limit)
+
+    # --- wandb: un solo run para todo el benchmark -----------------------
+    with wandb_run(
+        cfg,
+        name=f"benchmark_{cfg.model.name}_{cfg.dataset.name}",
+        tags=["benchmark", cfg.dataset.name, cfg.model.name],
+        job_type="benchmark",
+    ):
     
-    # -------------------------------------------------------------------------
-    # Initialize Runner (builds model + dataloader internally)
-    # -------------------------------------------------------------------------
-    log.info("\n[1/3] Initializing Runner...")
-    runner = EvaluationRunner(cfg)
-    parquet_path = runner.output_dir / "results_metadata.parquet"
-    
-    # -------------------------------------------------------------------------
-    # STAGE 1: Mass Evaluation (scalars only)
-    # -------------------------------------------------------------------------
-    force_rerun = cfg.get("force_rerun", False)
-    
-    if parquet_path.exists() and not force_rerun:
-        log.info("\n[2/3] Mass Evaluation: SKIPPED (parquet exists)")
-        log.info("      Use force_rerun=true to override")
-    else:
-        log.info("\n[2/3] Mass Evaluation: RUNNING...")
-        log.info("      This may take several minutes...")
+        # ---------------------------------------------------------------------
+        # Initialize Runner (builds model + dataloader internally)
+        # ---------------------------------------------------------------------
+        log.info("\n[1/3] Initializing Runner...")
+        runner = EvaluationRunner(cfg)
+        parquet_path = runner.output_dir / "results_metadata.parquet"
         
-        # Apply debug limit if set
-        if debug_limit is not None:
-            import itertools
-            runner.dataloader = itertools.islice(runner.dataloader, debug_limit)
+        # ---------------------------------------------------------------------
+        # STAGE 1: Mass Evaluation (scalars only)
+        # ---------------------------------------------------------------------
+        force_rerun = cfg.get("force_rerun", False)
         
-        df = runner.run_mass_evaluation()
-        log.info("      [OK] Saved %d results to %s", len(df), parquet_path.name)
+        if parquet_path.exists() and not force_rerun:
+            log.info("\n[2/3] Mass Evaluation: SKIPPED (parquet exists)")
+            log.info("      Use force_rerun=true to override")
+            # Cargar parquet existente para poder loggear métricas igualmente
+            import pandas as pd
+            df = pd.read_parquet(parquet_path)
+        else:
+            log.info("\n[2/3] Mass Evaluation: RUNNING...")
+            log.info("      This may take several minutes...")
+            
+            # Apply debug limit if set
+            if debug_limit is not None:
+                import itertools
+                runner.dataloader = itertools.islice(runner.dataloader, debug_limit)
+            
+            df = runner.run_mass_evaluation()
+            log.info("      [OK] Saved %d results to %s", len(df), parquet_path.name)
+
+        # --- wandb: log métricas escalares agregadas ----------------------
+        if df is not None and not df.empty:
+            log_metrics({
+                "oks_ours_mean": float(df["oks_ours"].mean()) if "oks_ours" in df.columns else 0.0,
+                "oks_base_mean": float(df["oks_base"].mean()) if "oks_base" in df.columns else 0.0,
+                "delta_oks_mean": float(df["delta_oks"].mean()) if "delta_oks" in df.columns else 0.0,
+                "nll_mean": float(df["nll"].mean()) if "nll" in df.columns else 0.0,
+                "entropy_mean": float(df["entropy"].mean()) if "entropy" in df.columns else 0.0,
+                "covariance_vol_mean": float(df["covariance_vol"].mean()) if "covariance_vol" in df.columns else 0.0,
+                "n_images": len(df),
+            })
+        
+        # ---------------------------------------------------------------------
+        # STAGE 2: Diagnostics (select focus groups)
+        # ---------------------------------------------------------------------
+        log.info("\n[3/3] Diagnostics: Selecting Focus Groups...")
+        
+        # Extract only the needed config sections to avoid interpolation errors
+        config_dict = {
+            'evaluation': OmegaConf.to_container(cfg.evaluation, resolve=True),
+            'dataset': OmegaConf.to_container(cfg.dataset, resolve=True),
+            'paths': OmegaConf.to_container(cfg.paths, resolve=True)
+        }
+        focus_groups = select_focus_groups(str(parquet_path), config_dict)
+        
+        total_selected = sum(len(ids) for ids in focus_groups.values())
+        log.info("      Selected %d images across %d groups:", total_selected, len(focus_groups))
+        for group_name, ids in focus_groups.items():
+            log.info("        - %-30s: %3d images", group_name, len(ids))
+
+        # --- wandb: log número de imágenes por focus group -----------------
+        log_metrics(
+            {f"focus_group/{gn}": len(ids) for gn, ids in focus_groups.items()}
+        )
+        
+        # ---------------------------------------------------------------------
+        # STAGE 3: Deep Profiling (full artefacts for selected images)
+        # ---------------------------------------------------------------------
+        if total_selected == 0:
+            log.warning("\n[WARNING] No images selected for Deep Profiling.")
+            log.warning("   Try adjusting thresholds in diagnostics.py or running more samples.")
+            return
     
-    # -------------------------------------------------------------------------
-    # STAGE 2: Diagnostics (select focus groups)
-    # -------------------------------------------------------------------------
-    log.info("\n[3/3] Diagnostics: Selecting Focus Groups...")
-    
-    # Extract only the needed config sections to avoid interpolation errors
-    config_dict = {
-        'evaluation': OmegaConf.to_container(cfg.evaluation, resolve=True),
-        'dataset': OmegaConf.to_container(cfg.dataset, resolve=True),
-        'paths': OmegaConf.to_container(cfg.paths, resolve=True)
-    }
-    focus_groups = select_focus_groups(str(parquet_path), config_dict)
-    
-    total_selected = sum(len(ids) for ids in focus_groups.values())
-    log.info("      Selected %d images across %d groups:", total_selected, len(focus_groups))
-    for group_name, ids in focus_groups.items():
-        log.info("        - %-20s: %3d images", group_name, len(ids))
-    
-    # -------------------------------------------------------------------------
-    # STAGE 3: Deep Profiling (full artefacts for selected images)
-    # -------------------------------------------------------------------------
-    if total_selected == 0:
-        log.warning("\n[WARNING] No images selected for Deep Profiling.")
-        log.warning("   Try adjusting thresholds in diagnostics.py or running more samples.")
-        return
-    
-    log.info("\n[4/4] Deep Profiling: Capturing full artefacts...")
-    log.info("      This will save ~%.1f MB per image (compressed)", 2.5)
-    
-    saved_paths = runner.run_deep_profiling(focus_groups)
-    log.info("      [OK] Saved %d analysis packets", len(saved_paths))
-    
-    # -------------------------------------------------------------------------
-    # Summary
-    # -------------------------------------------------------------------------
-    log.info("\n" + "=" * 70)
-    log.info("EVALUATION COMPLETE")
-    log.info("=" * 70)
-    log.info("Output directory: %s", runner.output_dir)
-    log.info("  - results_metadata.parquet  <- scalar metrics")
-    log.info("  - focus_groups_ids.json     <- selected IDs")
-    log.info("  - *.pkl.gz                  <- deep analysis packets")
-    log.info("\nNext step: Launch FiftyOne visualization")
-    log.info("  python src/experiments/launch_viz.py")
-    log.info("=" * 70)
+        log.info("\n[4/4] Deep Profiling: Capturing full artefacts...")
+        log.info("      This will save ~%.1f MB per image (compressed)", 2.5)
+        
+        saved_paths = runner.run_deep_profiling(focus_groups)
+        log.info("      [OK] Saved %d analysis packets", len(saved_paths))
+
+        # --- wandb: log deep profiling stats ---
+        log_metrics({"deep_profiling/n_packets": len(saved_paths)})
+        
+        # ---------------------------------------------------------------------
+        # Summary
+        # ---------------------------------------------------------------------
+        log.info("\n" + "=" * 70)
+        log.info("EVALUATION COMPLETE")
+        log.info("=" * 70)
+        log.info("Output directory: %s", runner.output_dir)
+        log.info("  - results_metadata.parquet  <- scalar metrics")
+        log.info("  - focus_groups_ids.json     <- selected IDs")
+        log.info("  - *.pkl.gz                  <- deep analysis packets")
+        log.info("\nNext step: Launch FiftyOne visualization")
+        log.info("  python src/experiments/launch_viz.py")
+        log.info("=" * 70)
 
 
 if __name__ == "__main__":
