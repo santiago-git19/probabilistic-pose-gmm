@@ -88,3 +88,10 @@ logging:
   level: INFO
   save_visualizations: true
   output_dir: outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
+
+# Weights & Biases experiment tracking
+# Set enabled: false to disable wandb without changing any code.
+wandb:
+  enabled: true
+  project: "tfg-pose-estimation"
+  entity: null                    # null = uses your default W&B entity
