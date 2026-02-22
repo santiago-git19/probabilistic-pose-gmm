@@ -154,12 +154,47 @@ Donde $N_k = \sum_n \gamma_{nk}$ es el "número efectivo" de muestras asignadas 
 
 $$\boldsymbol{\Sigma}_k \leftarrow \frac{\sum_{n=1}^{N} \gamma_{nk} \cdot (\mathbf{x}_n - \boldsymbol{\mu}_k)(\mathbf{x}_n - \boldsymbol{\mu}_k)^\top}{N_k} + \lambda \mathbf{I}$$
 
-El término $\lambda \mathbf{I}$ (configurado como `reg_covar`, típicamente $10^{-4}$) es una **regularización de Tikhonov** que:
-- Garantiza que $\boldsymbol{\Sigma}_k$ sea definida positiva (inversible)
-- Evita colapso de componentes cuando pocas muestras están asignadas
-- Actúa como un prior suave que asume mínima varianza
+#### Regularización de Covarianza: Garantía de Definición Positiva
 
-Adicionalmente, antes de aplicar la regularización fija, el código verifica los eigenvalores de la covarianza. Si el eigenvalor mínimo $\lambda_{\min}(\boldsymbol{\Sigma}_k) < \lambda$, se incrementa la regularización a $\lambda - \min(0, \lambda_{\min})$ para garantizar positividad estricta.
+La matriz de covarianza empírica $\boldsymbol{\Sigma}_k$ calculada arriba **no está garantizada** de ser definida positiva. Puede ser singular o semi-definida positiva cuando:
+- El número de muestras asignadas es muy pequeño ($N_k < \text{dimensión}$)
+- Las muestras son colineales (degeneradas en una línea)
+- Errores numéricos acumulados en punto flotante
+
+Una matriz singular causa **fallos catastróficos** en el cálculo de $|\boldsymbol{\Sigma}_k|$ (determinante) y $\boldsymbol{\Sigma}_k^{-1}$ (inversión) necesarios para evaluar la densidad gaussiana en el E-step.
+
+**Algoritmo de regularización adaptativa** (implementado en `_regularize_covariance`):
+
+1. **Manejo de casos degenerados**: Si la covarianza es escalar (1×1), se expande a matriz diagonal 2×2:
+   $$\text{Si } \boldsymbol{\Sigma} = [\sigma^2] \;\Rightarrow\; \boldsymbol{\Sigma} = \begin{bmatrix} \sigma^2 & 0 \\ 0 & \sigma^2 \end{bmatrix}$$
+
+2. **Cálculo de eigenvalores**: Se usa `scipy.linalg.eigvalsh` en lugar de `numpy.linalg.eig`:
+   - `eigvalsh` está **optimizado para matrices simétricas** (Hermitian)
+   - Retorna solo eigenvalores (no eigenvectores) → ~2× más rápido
+   - Usa algoritmos especializados (divide-and-conquer) con mejor estabilidad numérica
+   - El vector de eigenvalores está ordenado: $\lambda_1 \leq \lambda_2 \leq \dots \leq \lambda_n$
+
+3. **Detección de matriz semi-definida o negativa**:
+   $$\lambda_{\min} = \min_i \lambda_i(\boldsymbol{\Sigma}_k)$$
+   
+   Si $\lambda_{\min} < \lambda_{\text{reg}}$ (donde $\lambda_{\text{reg}} =$ `reg_covar` $\approx 10^{-4}$), la matriz necesita regularización.
+
+4. **Cálculo adaptativo de la regularización**:
+   $$\text{reg\_amount} = \lambda_{\text{reg}} - \min(0, \lambda_{\min})$$
+   
+   Esta fórmula garantiza que:
+   - Si $\lambda_{\min} < 0$ (eigenvalor negativo → matriz indefinida): $\text{reg\_amount} = \lambda_{\text{reg}} + |\lambda_{\min}|$
+   - Si $0 \leq \lambda_{\min} < \lambda_{\text{reg}}$ (matriz semi-definida): $\text{reg\_amount} = \lambda_{\text{reg}} - \lambda_{\min}$
+   - Si $\lambda_{\min} \geq \lambda_{\text{reg}}$: No se regulariza
+
+5. **Aplicación de la regularización** (Tikhonov):
+   $$\widetilde{\boldsymbol{\Sigma}}_k = \boldsymbol{\Sigma}_k + \text{reg\_amount} \cdot \mathbf{I}$$
+   
+   Esto desplaza **todos** los eigenvalores hacia arriba en la misma cantidad, garantizando que el menor sea ahora $\geq \lambda_{\text{reg}}$.
+
+**Manejo de errores**: Si `eigvalsh` lanza `np.linalg.LinAlgError` (matriz corrupta o mal condicionada), se fuerza la regularización seteando artificialmente $\lambda_{\min} = -1$, lo que aplica una regularización de $\lambda_{\text{reg}} + 1 \approx 1.0001$ — suficiente para estabilizar cualquier matriz problemática.
+
+**Interpretación geométrica**: La regularización añade una "bola" de varianza mínima en todas direcciones. Si el componente ha colapsado a un punto (covarianza cero), se expande a una Gaussiana isotrópica de radio $\sqrt{\lambda_{\text{reg}}}$. Esto actúa como un **prior suave** que refleja la creencia de que la incertidumbre mínima posible es ~0.01 píxeles (para $\lambda_{\text{reg}} = 10^{-4}$ y heatmaps de 64×48).
 
 **Actualización de pesos** — proporción de responsabilidad total:
 
