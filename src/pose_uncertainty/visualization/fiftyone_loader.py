@@ -186,7 +186,7 @@ def _packet_to_samples(
             samples.append(s)
 
         s = _build_tta_heatmap_slice(
-            entry, idx, name, prefix, cache_dir, fo, group, scalars,
+            entry, idx, name, prefix, cache_dir, fo, group, scalars, packet,
         )
         if s is not None:
             samples.append(s)
@@ -220,25 +220,29 @@ def _build_original_slice(
     # GT coords with visibility (used for filtering)
     gt = _nested_array(packet, "ground_truth", "coords")  # (N, 3): x, y, vis
 
-    # GT keypoints – labelled per body part + visibility
+    # ---- Visibility-split keypoints (9 fields) ----------------------------
+    # GT keypoints split by own visibility flags
     if gt is not None:
-        sample["ground_truth"] = _to_fo_keypoints_labeled(
-            gt, w, h, fo, gt_coords_with_vis=gt,
-        )
+        gt_split = _split_keypoints_by_visibility(gt, gt, w, h, fo)
+        sample["gt_visible"]     = gt_split[2]
+        sample["gt_occluded"]    = gt_split[1]
+        sample["gt_not_labeled"] = gt_split[0]
 
-    # Baseline prediction – labelled per body part + GT visibility
+    # Baseline prediction split by GT visibility flags
     base = _nested_array(packet, "predictions", "baseline", "coords")
-    if base is not None:
-        sample["prediction_base"] = _to_fo_keypoints_labeled(
-            base, w, h, fo, gt_coords_with_vis=gt,
-        )
+    if base is not None and gt is not None:
+        base_split = _split_keypoints_by_visibility(base, gt, w, h, fo)
+        sample["pred_base_visible"]     = base_split[2]
+        sample["pred_base_occluded"]    = base_split[1]
+        sample["pred_base_not_labeled"] = base_split[0]
 
-    # Our GMM prediction – labelled per body part + GT visibility
+    # Our GMM prediction split by GT visibility flags
     ours = _nested_array(packet, "predictions", "ours_gmm", "coords")
-    if ours is not None:
-        sample["prediction_ours"] = _to_fo_keypoints_labeled(
-            ours, w, h, fo, gt_coords_with_vis=gt,
-        )
+    if ours is not None and gt is not None:
+        ours_split = _split_keypoints_by_visibility(ours, gt, w, h, fo)
+        sample["pred_ours_visible"]     = ours_split[2]
+        sample["pred_ours_occluded"]    = ours_split[1]
+        sample["pred_ours_not_labeled"] = ours_split[0]
 
     # Uncertainty ellipses – labelled per keypoint (+ visibility tags)
     gmm_per_kp = packet.get("gmm_per_kp")
@@ -289,8 +293,31 @@ def _build_mix_analysis_slice(
     hm_h, hm_w = avg_hm.shape[1], avg_hm.shape[2]
     titles = COCO_KP_NAMES[:n_kp]
 
+    # ---- Extract GT visibility flags and per-keypoint OKS -----------------
+    gt = _nested_array(packet, "ground_truth", "coords")  # (N, 3): x, y, vis
+    vis_flags: Optional[npt.NDArray] = None
+    if gt is not None and gt.shape[1] >= 3:
+        vis_flags = gt[:n_kp, 2].astype(np.int32)
+
+    metrics = packet.get("metrics", {})
+    per_kp_oks_ours: Optional[npt.NDArray] = None
+    per_kp_oks_base: Optional[npt.NDArray] = None
+    
+    raw_oks_ours = metrics.get("per_kp_oks_ours")
+    if raw_oks_ours is not None:
+        per_kp_oks_ours = np.asarray(raw_oks_ours, dtype=np.float32)[:n_kp]
+    
+    raw_oks_base = metrics.get("per_kp_oks_base")
+    if raw_oks_base is not None:
+        per_kp_oks_base = np.asarray(raw_oks_base, dtype=np.float32)[:n_kp]
+
     # ---- render 4×5 heatmap grid ------------------------------------------
-    grid_rgb, rects = _render_heatmap_grid(avg_hm[:n_kp], titles)
+    grid_rgb, rects = _render_heatmap_grid(
+        avg_hm[:n_kp], titles,
+        vis_flags=vis_flags,
+        per_kp_oks_ours=per_kp_oks_ours,
+        per_kp_oks_base=per_kp_oks_base,
+    )
     grid_path = cache_dir / f"{prefix}_mix_analysis.jpg"
     cv2.imwrite(
         str(grid_path),
@@ -438,6 +465,7 @@ def _build_tta_heatmap_slice(
     fo: Any,
     group: Any,
     scalars: Dict[str, Any],
+    packet: Optional[Dict] = None,
 ) -> Optional[Any]:
     """Slice ``'tta_{i}_heatmaps'``: per-keypoint heatmap grid for one TTA."""
 
@@ -448,7 +476,31 @@ def _build_tta_heatmap_slice(
     n_kp = min(hm.shape[0], _N_KP)
     titles = [f"{COCO_KP_NAMES[k]} [{name}]" for k in range(n_kp)]
 
-    grid_rgb, _ = _render_heatmap_grid(hm[:n_kp], titles)
+    # ---- Extract GT visibility flags and per-keypoint OKS -----------------
+    vis_flags: Optional[npt.NDArray] = None
+    per_kp_oks_ours: Optional[npt.NDArray] = None
+    per_kp_oks_base: Optional[npt.NDArray] = None
+    
+    if packet is not None:
+        gt = _nested_array(packet, "ground_truth", "coords")
+        if gt is not None and gt.shape[1] >= 3:
+            vis_flags = gt[:n_kp, 2].astype(np.int32)
+        
+        metrics = packet.get("metrics", {})
+        raw_oks_ours = metrics.get("per_kp_oks_ours")
+        if raw_oks_ours is not None:
+            per_kp_oks_ours = np.asarray(raw_oks_ours, dtype=np.float32)[:n_kp]
+        
+        raw_oks_base = metrics.get("per_kp_oks_base")
+        if raw_oks_base is not None:
+            per_kp_oks_base = np.asarray(raw_oks_base, dtype=np.float32)[:n_kp]
+
+    grid_rgb, _ = _render_heatmap_grid(
+        hm[:n_kp], titles,
+        vis_flags=vis_flags,
+        per_kp_oks_ours=per_kp_oks_ours,
+        per_kp_oks_base=per_kp_oks_base,
+    )
     tta_label, tta_slug = _tta_label_and_slug(name, entry)
     path = cache_dir / f"{prefix}_tta_{tta_slug}_heatmaps.jpg"
     cv2.imwrite(
@@ -475,6 +527,9 @@ def _render_heatmap_grid(
     heatmaps: npt.NDArray,
     titles: List[str],
     show_axis: bool = False,
+    vis_flags: Optional[npt.NDArray] = None,
+    per_kp_oks_ours: Optional[npt.NDArray] = None,
+    per_kp_oks_base: Optional[npt.NDArray] = None,
 ) -> Tuple[npt.NDArray, List[Dict[str, float]]]:
     """Render ``(K, H, W)`` heatmaps as a single grid image.
 
@@ -486,6 +541,14 @@ def _render_heatmap_grid(
         One title per subplot (body-part name).
     show_axis : bool
         Whether to display axis ticks.
+    vis_flags : (K,) int array or None
+        COCO GT visibility per keypoint (0=not_labeled, 1=occluded, 2=visible).
+        Used to colour subplot borders.
+    per_kp_oks_ours : (K,) float array or None
+        Per-keypoint OKS scores (ours method) in [0, 1].
+    per_kp_oks_base : (K,) float array or None
+        Per-keypoint OKS scores (baseline) in [0, 1].
+        Delta OKS is computed as (ours - base) and used for color gradient.
 
     Returns
     -------
@@ -513,6 +576,13 @@ def _render_heatmap_grid(
         squeeze=False,
     )
 
+    # Spine color mapping: COCO visibility code → color
+    _SPINE_COLORS = {0: "#FF3333", 1: "#AA44FF", 2: "#33CC33"}  # red, purple, green
+    _SPINE_WIDTH = 3.5
+
+    # Continuous colormap for OKS-based title gradient
+    cmap_oks = plt.cm.RdYlGn  # Red → Yellow → Green
+
     for i in range(K):
         r, c = divmod(i, n_cols)
         ax = axes[r][c]
@@ -520,10 +590,57 @@ def _render_heatmap_grid(
             heatmaps[i], cmap="hot",
             interpolation="bilinear", aspect="equal",
         )
+
+        # -- Title: "Name | OKS | Delta" with gradient color based on delta ---
+        oks_ours_val = None
+        oks_base_val = None
+        delta_oks_val = None
+        
+        if per_kp_oks_ours is not None and i < len(per_kp_oks_ours):
+            oks_ours_val = float(per_kp_oks_ours[i]) if not np.isnan(per_kp_oks_ours[i]) else None
+        
+        if per_kp_oks_base is not None and i < len(per_kp_oks_base):
+            oks_base_val = float(per_kp_oks_base[i]) if not np.isnan(per_kp_oks_base[i]) else None
+        
+        # Calculate delta_oks
+        if oks_ours_val is not None and oks_base_val is not None:
+            delta_oks_val = oks_ours_val - oks_base_val
+
+        # Build title text
+        if oks_ours_val is not None and delta_oks_val is not None:
+            title_text = f"{titles[i]} | {oks_ours_val:.2f} | {delta_oks_val:+.2f}"
+            # Color gradient based on delta_oks: map [-1, +1] to [0, 1]
+            # -1 (worst drop) -> red (0.0)
+            #  0 (no change)  -> yellow (0.5)
+            # +1 (best gain)  -> green (1.0)
+            normalized_delta = np.clip((delta_oks_val + 1.0) / 2.0, 0.0, 1.0)
+            title_color = cmap_oks(normalized_delta)
+        elif oks_ours_val is not None:
+            # Fallback: only ours available
+            title_text = f"{titles[i]} | {oks_ours_val:.2f}"
+            title_color = cmap_oks(np.clip(oks_ours_val, 0.0, 1.0))
+        else:
+            title_text = titles[i]
+            title_color = "white"
+
         ax.set_title(
-            titles[i], fontsize=9, fontweight="bold",
-            color="white", pad=4,
+            title_text, fontsize=9, fontweight="bold",
+            color=title_color, pad=4,
+            bbox=dict(facecolor="black", alpha=0.7, edgecolor="none",
+                      boxstyle="round,pad=0.2"),
         )
+
+        # -- Spine colors based on GT visibility ---------------------------
+        if vis_flags is not None and i < len(vis_flags):
+            spine_color = _SPINE_COLORS.get(int(vis_flags[i]), "#999999")
+        else:
+            spine_color = "#999999"  # grey fallback
+
+        for spine in ax.spines.values():
+            spine.set_edgecolor(spine_color)
+            spine.set_linewidth(_SPINE_WIDTH)
+            spine.set_visible(True)
+
         if not show_axis:
             ax.set_xticks([])
             ax.set_yticks([])
@@ -1260,6 +1377,70 @@ def _to_fo_keypoint(
 
 
 _VIS_LABELS = {0: "not_labeled", 1: "occluded", 2: "visible"}
+
+# Mapping from COCO visibility code → suffix used in the 9 fo.Keypoints fields
+_VIS_SUFFIXES = {0: "not_labeled", 1: "occluded", 2: "visible"}
+
+
+def _split_keypoints_by_visibility(
+    coords: npt.NDArray,
+    gt_vis: npt.NDArray,
+    img_w: int,
+    img_h: int,
+    fo: Any,
+) -> Dict[int, Any]:
+    """Split a coordinate array into three ``fo.Keypoints`` groups by GT
+    visibility code.
+
+    Parameters
+    ----------
+    coords : ndarray, shape (N, 2|3)
+        Keypoint coordinates (x, y[, score]).
+    gt_vis : ndarray, shape (N, 3)
+        GT array whose 3rd column encodes COCO visibility:
+        0 = not_labeled, 1 = occluded, 2 = visible.
+    img_w, img_h : int
+        Image dimensions for normalisation to [0, 1].
+    fo : module
+        The ``fiftyone`` module.
+
+    Returns
+    -------
+    dict[int, fo.Keypoints]
+        Mapping ``{0: <not_labeled>, 1: <occluded>, 2: <visible>}``.
+        Each ``fo.Keypoints`` contains **only** the keypoints whose
+        corresponding GT visibility matches the key.  Keypoints are
+        labelled with their COCO body-part name.
+    """
+    n_kp = min(coords.shape[0], _N_KP)
+    # Buckets: vis_code -> list[fo.Keypoint]
+    buckets: Dict[int, List[Any]] = {0: [], 1: [], 2: []}
+
+    for k in range(n_kp):
+        # Determine GT visibility for this keypoint
+        if gt_vis is not None and k < gt_vis.shape[0] and gt_vis.shape[1] >= 3:
+            vis_code = int(gt_vis[k, 2])
+        else:
+            vis_code = 2  # assume visible if unknown
+
+        x_norm = float(np.clip(coords[k, 0] / img_w, 0.0, 1.0))
+        y_norm = float(np.clip(coords[k, 1] / img_h, 0.0, 1.0))
+
+        kp = fo.Keypoint(
+            points=[(x_norm, y_norm)],
+            label=COCO_KP_NAMES[k],
+        )
+        kp.tags = [COCO_KP_NAMES[k]]
+
+        if vis_code in buckets:
+            buckets[vis_code].append(kp)
+        else:
+            buckets[2].append(kp)  # unknown → visible bucket
+
+    result: Dict[int, Any] = {}
+    for vis_code, kp_list in buckets.items():
+        result[vis_code] = fo.Keypoints(keypoints=kp_list)
+    return result
 
 
 def _to_fo_keypoints_labeled(
