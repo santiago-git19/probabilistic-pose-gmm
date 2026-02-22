@@ -51,60 +51,380 @@ Este proyecto implementa un **sistema de estimación de pose humana robusto** qu
 
 ## 📐 Fundamentos Matemáticos
 
-### Modelo de Mezcla Gaussiana Robusto
+### 1. La Idea Central: ¿Por Qué Cuantificar la Incertidumbre?
 
-La distribución de cada keypoint se modela como una mezcla de Gaussianas más un componente uniforme para outliers:
+Los modelos de pose estimation producen **heatmaps** por cada keypoint: mapas de calor 2D que representan la probabilidad de que el keypoint se encuentre en una posición $(x, y)$ de la imagen. Normalmente, se toma simplemente el **argmax** del heatmap como la predicción final. Esto tiene dos problemas fundamentales:
 
-```
-P(x | θ) = Σₖ πₖ · 𝒩(x | μₖ, Σₖ) + π_uniform · U(x | Area)
-```
+1. **Se pierde información sobre la confianza**: No es lo mismo un heatmap con un pico nítido y concentrado (keypoint claramente visible) que un heatmap difuso y plano (keypoint ambiguo u ocluido). El argmax en ambos casos devuelve un solo punto, sin indicar cuánto confiar en él.
+
+2. **Se ignoran las ambigüedades multimodales**: En poses simétricas (por ejemplo, una persona de frente con los brazos cruzados), el heatmap para "muñeca izquierda" puede tener **dos picos** — uno en la posición real y otro en la posición de la muñeca derecha. El argmax elige uno arbitrariamente, pero la distribución bimodal contiene información valiosa sobre la ambigüedad.
+
+**Nuestra propuesta**: En lugar de colapsar el heatmap a un solo punto, lo tratamos como una **distribución de probabilidad** y la modelamos explícitamente con un **modelo de mezcla gaussiana robusto**. Esto nos permite:
+- Obtener una **posición refinada** (la media del componente dominante)
+- Cuantificar la **incertidumbre** (la matriz de covarianza 2×2)
+- Detectar **ambigüedades** (distribuciones bimodales)
+- Filtrar **outliers** (mediante un componente uniforme)
+
+---
+
+### 2. Modelo de Mezcla Gaussiana Robusto (RobustGaussianMixture)
+
+#### 2.1 Formulación del Modelo
+
+La distribución de cada keypoint se modela como una mezcla de $K$ Gaussianas más un componente uniforme que absorbe outliers:
+
+$$P(\mathbf{x} \mid \theta) = \sum_{k=1}^{K} \pi_k \cdot \mathcal{N}(\mathbf{x} \mid \boldsymbol{\mu}_k, \boldsymbol{\Sigma}_k) + \pi_u \cdot U(\mathbf{x} \mid \mathcal{A})$$
 
 **Donde:**
-- `μₖ`: Media del componente k (posición del keypoint)
-- `Σₖ`: Matriz de covarianza 2×2 (incertidumbre)
-- `πₖ`: Peso del componente gaussiano
-- `π_uniform`: Peso del componente uniforme (outliers)
-- `U(x | Area)`: Distribución uniforme sobre el área de la imagen
+- $\mathbf{x} \in \mathbb{R}^2$: Posición (x, y) en coordenadas de imagen
+- $\boldsymbol{\mu}_k \in \mathbb{R}^2$: Media del componente $k$ (la posición predicha)
+- $\boldsymbol{\Sigma}_k \in \mathbb{R}^{2 \times 2}$: Matriz de covarianza (incertidumbre espacial)
+- $\pi_k \in [0, 1]$: Peso de mezcla del componente $k$ (con $\sum_k \pi_k + \pi_u = 1$)
+- $\pi_u$: Peso del componente uniforme
+- $U(\mathbf{x} \mid \mathcal{A}) = \frac{1}{\text{Area}}$: Distribución uniforme sobre el bounding box
 
-### Restricción de Covarianza Compartida
+La densidad Gaussiana 2D se define como:
 
-Para poses ambiguas (ej: brazos izquierdo/derecho intercambiados):
+$$\mathcal{N}(\mathbf{x} \mid \boldsymbol{\mu}, \boldsymbol{\Sigma}) = \frac{1}{2\pi \sqrt{|\boldsymbol{\Sigma}|}} \exp\left(-\frac{1}{2}(\mathbf{x} - \boldsymbol{\mu})^\top \boldsymbol{\Sigma}^{-1} (\mathbf{x} - \boldsymbol{\mu})\right)$$
 
-```
-P(x) = π₁·𝒩(x | μ₁, Σ) + π₂·𝒩(x | μ₂, Σ)    con Σ₁ = Σ₂ = Σ
-```
+#### 2.2 ¿Por Qué un Componente Uniforme?
+
+El componente uniforme $U(\mathbf{x} \mid \mathcal{A})$ es un añadido crucial con respecto a un GMM clásico. Su función es **absorber los puntos ruidosos** que no pertenecen a ningún pico real del heatmap. Esto ocurre porque:
+- El muestreo Monte Carlo del heatmap puede producir muestras en regiones de baja probabilidad (artefactos del muestreo).
+- Los heatmaps pueden tener ruido de fondo no despreciable.
+- En heatmaps muy planos (keypoint no visible), todas las muestras son efectivamente "outliers".
+
+Sin el componente uniforme, estas muestras ruidosas **distorsionan** las medias y covarianzas de las Gaussianas. Con él, los outliers son asignados al componente uniforme con alta responsabilidad y no afectan al resto.
+
+La densidad uniforme se calcula como:
+
+$$U(\mathbf{x}) = \frac{1}{(x_{\max} - x_{\min}) \cdot (y_{\max} - y_{\min})}$$
+
+Donde los límites se calculan a partir del bounding box de las muestras con un margen.
+
+#### 2.3 Detección de Ambigüedades Bimodales
+
+El modelo compara automáticamente dos hipótesis:
+- **Unimodal (K=1)**: Un solo keypoint claramente localizado → 1 Gaussiana + Uniforme
+- **Bimodal (K=2)**: Ambigüedad izquierda/derecha → 2 Gaussianas + Uniforme
+
+La interpretación física de K=2 es: en poses simétricas (por ejemplo, una persona de frente), el modelo no puede distinguir con certeza la muñeca izquierda de la derecha. El heatmap tiene dos picos, y el GMM con K=2 los captura como dos componentes con sus respectivos pesos. El peso $\pi_k$ indica cuánta "masa" de probabilidad asigna el modelo a cada hipótesis.
+
+---
+
+### 3. Algoritmo Expectation-Maximization (EM)
+
+El algoritmo EM es un método iterativo para estimar los parámetros $\theta = \{\pi_k, \boldsymbol{\mu}_k, \boldsymbol{\Sigma}_k, \pi_u\}$ por máxima verosimilitud. Dado que no conocemos a qué componente pertenece cada muestra, introducimos **variables latentes** $z_n$ que indican la asignación.
+
+#### 3.1 Inicialización
+
+Antes de iterar, los parámetros deben tener valores iniciales razonables. Se implementan dos estrategias:
+
+**K-means++ Initialization**: Se usa `scipy.cluster.vq.kmeans2` con semilla `k-means++` para posicionar los centroides iniciales. Las covarianzas iniciales se calculan a partir de las muestras asignadas a cada centroide. Los pesos iniciales son proporcionales al número de muestras asignadas a cada cluster.
+
+**Random Initialization**: Se seleccionan aleatoriamente $K$ muestras del dataset como centroides. Útil como fallback si k-means falla (ej: datos degenerados).
+
+El peso uniforme se inicializa típicamente a $\pi_u = 0.2$ (configurable), lo que significa que el modelo empieza asumiendo que el 20% de las muestras podrían ser outliers.
+
+#### 3.2 E-step: Cálculo de Responsabilidades
+
+Para cada muestra $\mathbf{x}_n$ y cada componente $k$, se calcula la **responsabilidad** $\gamma_{nk}$, que es la probabilidad posterior de que $\mathbf{x}_n$ pertenezca al componente $k$:
+
+$$\gamma_{nk} = \frac{\pi_k \cdot \mathcal{N}(\mathbf{x}_n \mid \boldsymbol{\mu}_k, \boldsymbol{\Sigma}_k)}{\underbrace{\sum_{j=1}^{K} \pi_j \cdot \mathcal{N}(\mathbf{x}_n \mid \boldsymbol{\mu}_j, \boldsymbol{\Sigma}_j) + \pi_u \cdot U(\mathbf{x}_n)}_{\text{evidencia total } P(\mathbf{x}_n)}}$$
+
+Para el componente uniforme, la responsabilidad es:
+
+$$\gamma_{n,\text{uniform}} = \frac{\pi_u \cdot U(\mathbf{x}_n)}{P(\mathbf{x}_n)}$$
+
+Se cumple que $\sum_{k=1}^{K} \gamma_{nk} + \gamma_{n,\text{uniform}} = 1$ para cada muestra $n$.
+
+**Interpretación**: Si una muestra $\mathbf{x}_n$ está cerca de la media $\boldsymbol{\mu}_k$, su densidad gaussiana será alta y $\gamma_{nk} \approx 1$. Si está lejos de todos los picos, la densidad uniforme domina y $\gamma_{n,\text{uniform}} \approx 1$.
+
+#### 3.3 M-step: Actualización de Parámetros
+
+Con las responsabilidades calculadas, se actualizan los parámetros en dirección de máxima verosimilitud.
+
+**Actualización de medias** — media ponderada por responsabilidad:
+
+$$\boldsymbol{\mu}_k \leftarrow \frac{\sum_{n=1}^{N} \gamma_{nk} \cdot \mathbf{x}_n}{\sum_{n=1}^{N} \gamma_{nk}} = \frac{\sum_{n=1}^{N} \gamma_{nk} \cdot \mathbf{x}_n}{N_k}$$
+
+Donde $N_k = \sum_n \gamma_{nk}$ es el "número efectivo" de muestras asignadas al componente $k$.
+
+**Actualización de covarianzas** — covarianza empírica ponderada + regularización:
+
+$$\boldsymbol{\Sigma}_k \leftarrow \frac{\sum_{n=1}^{N} \gamma_{nk} \cdot (\mathbf{x}_n - \boldsymbol{\mu}_k)(\mathbf{x}_n - \boldsymbol{\mu}_k)^\top}{N_k} + \lambda \mathbf{I}$$
+
+El término $\lambda \mathbf{I}$ (configurado como `reg_covar`, típicamente $10^{-4}$) es una **regularización de Tikhonov** que:
+- Garantiza que $\boldsymbol{\Sigma}_k$ sea definida positiva (inversible)
+- Evita colapso de componentes cuando pocas muestras están asignadas
+- Actúa como un prior suave que asume mínima varianza
+
+Adicionalmente, antes de aplicar la regularización fija, el código verifica los eigenvalores de la covarianza. Si el eigenvalor mínimo $\lambda_{\min}(\boldsymbol{\Sigma}_k) < \lambda$, se incrementa la regularización a $\lambda - \min(0, \lambda_{\min})$ para garantizar positividad estricta.
+
+**Actualización de pesos** — proporción de responsabilidad total:
+
+$$\pi_k \leftarrow \frac{N_k}{N}, \qquad \pi_u \leftarrow \frac{\sum_n \gamma_{n,\text{uniform}}}{N}$$
+
+Después se normalizan para asegurar $\sum_k \pi_k + \pi_u = 1$.
+
+#### 3.4 Detección de Componentes Muertos
+
+Si el peso de un componente cae por debajo de `min_component_weight` ($10^{-3}$ por defecto), se considera un **componente muerto**. Esto significa que los datos no justifican esa componente y sus muestras han migrado a otros componentes durante las iteraciones. Es una señal de que el modelo con menos componentes es más apropiado.
+
+#### 3.5 Convergencia y Log-Verosimilitud
+
+Tras cada iteración completa E+M, se calcula la **log-verosimilitud** del modelo:
+
+$$\log \mathcal{L} = \sum_{n=1}^{N} \log P(\mathbf{x}_n) = \sum_{n=1}^{N} \log \left[\sum_{k=1}^{K} \pi_k \cdot \mathcal{N}(\mathbf{x}_n \mid \boldsymbol{\mu}_k, \boldsymbol{\Sigma}_k) + \pi_u \cdot U(\mathbf{x}_n)\right]$$
+
+Se detiene cuando $|\log \mathcal{L}^{(t)} - \log \mathcal{L}^{(t-1)}| < \text{tol}$ (por defecto $10^{-3}$), indicando que los parámetros han convergido. Una propiedad fundamental del EM es que la log-verosimilitud **nunca decrece** entre iteraciones (es un algoritmo de mejora monótona).
+
+Si no converge tras `max_iter` iteraciones (100 por defecto), se devuelven los parámetros del último paso.
+
+---
+
+### 4. Selección Automática de Modelo (AIC/BIC)
+
+Un problema central es: **¿el heatmap de este keypoint es unimodal o bimodal?** No podemos simplemente ajustar siempre K=2, porque las componentes extra se ajustarían a ruido (sobreajuste).
+
+Se resuelve comparando dos modelos ajustados independientemente:
+- **Modelo A**: K=2 Gaussianas + 1 Uniforme (bimodal)
+- **Modelo B**: K=1 Gaussiana + 1 Uniforme (unimodal)
+
+La comparación usa criterios de información que penalizan la complejidad del modelo:
+
+**AIC (Akaike Information Criterion)**:
+
+$$\text{AIC} = 2p - 2 \log \mathcal{L}$$
+
+**BIC (Bayesian Information Criterion)**:
+
+$$\text{BIC} = p \cdot \ln(N) - 2 \log \mathcal{L}$$
+
+Donde $p$ es el número de parámetros libres del modelo. Para un GMM con $K$ componentes en 2D:
+- Cada Gaussiana tiene: 2 (media) + 3 (covarianza simétrica 2×2) + 1 (peso) = 6 parámetros
+- Total: $p = 6K$ (las restricciones de suma de pesos se ignoran por simplicidad en la implementación)
+
+**Score combinado**:
+
+$$\text{Score} = w_{\text{aic}} \cdot \text{AIC} + w_{\text{bic}} \cdot \text{BIC}$$
+
+Por defecto se usa únicamente BIC ($w_{\text{bic}}=1, w_{\text{aic}}=0$) porque penaliza más fuertemente la complejidad ($\ln(N)$ vs. 2), lo que es más conservador al declarar bimodalidad. Se elige el modelo con **menor score**.
+
+**¿Por qué BIC sobre AIC?** El BIC es un estimador consistente: converge al modelo verdadero cuando $N \to \infty$. Para nuestro caso de uso (500 muestras típicamente), el BIC penaliza con $\ln(500) \approx 6.2$ por parámetro, mientras que el AIC penaliza con 2. Esto evita declarar falsamente "ambigüedad bimodal" cuando el heatmap tiene un solo pico con algo de ruido.
+
+---
+
+### 5. Outer Loop: Estabilidad por Bootstrap
+
+El algoritmo EM es sensible a la inicialización: diferentes semillas pueden producir resultados distintos. Para estabilizar las predicciones, se introduce un **outer loop de bootstrap**:
+
+**Algoritmo:**
+
+Para $t = 1, \dots, T$ (típicamente $T = 1$ a 5):
+1. **Re-muestrear**: Extraer $n'$ muestras con reemplazo del conjunto original (bootstrap)
+2. **Ajustar y seleccionar**: Ejecutar EM con K=1 y K=2, seleccionar ganador por AIC/BIC
+3. **Almacenar**: Guardar $(\boldsymbol{\mu}_t^*, \boldsymbol{\Sigma}_t^*)$ del modelo ganador
+
+**Agregación final**:
+
+$$\boldsymbol{\mu}_{\text{agg}} = \frac{1}{T} \sum_{t=1}^{T} \boldsymbol{\mu}_t^*$$
+
+$$\boldsymbol{\Sigma}_{\text{agg}} = \underbrace{\frac{1}{T} \sum_{t=1}^{T} \boldsymbol{\Sigma}_t^*}_{\text{media de covarianzas}} + \underbrace{\text{Cov}(\{\boldsymbol{\mu}_t^*\}_{t=1}^T)}_{\text{varianza de las medias}}$$
+
+El segundo término captura la **incertidumbre del estimador**: si las medias cambian mucho entre iteraciones de bootstrap, la covarianza agregada será mayor. Esto aplica la **ley de la varianza total**: $\text{Var}(X) = E[\text{Var}(X|Z)] + \text{Var}(E[X|Z])$.
+
+Se determina el **tipo de modelo dominante** (unimodal vs. bimodal) por votación mayoritaria entre las $T$ iteraciones.
+
+---
+
+### 6. Muestreo Monte Carlo desde Heatmaps
+
+#### 6.1 ¿Por Qué Muestrear en Lugar de Calcular Momentos Directamente?
+
+El heatmap $H(x, y)$ del modelo de pose es una rejilla discreta (típicamente 64×48 o 48×64 píxeles). Podríamos calcular momentos directamente:
+
+$$\boldsymbol{\mu} = \sum_{x,y} (x, y) \cdot H(x, y), \qquad \boldsymbol{\Sigma} = \sum_{x,y} H(x,y) \cdot (\mathbf{p} - \boldsymbol{\mu})(\mathbf{p} - \boldsymbol{\mu})^\top$$
+
+Pero este enfoque **asume unimodalidad**. Si el heatmap es bimodal (dos picos), la media cae entre los dos picos — una posición donde no hay ningún keypoint real. Además, la covarianza sería enorme y no informativa.
+
+**El muestreo Monte Carlo** resuelve esto: generamos $N$ muestras $\{(\mathbf{x}_i)\}_{i=1}^N$ de la distribución del heatmap, y luego **ajustamos un GMM a las muestras**. El GMM puede capturar la bimodalidad con dos componentes separados, cada uno con su propia media y covarianza.
+
+#### 6.2 Rejection Sampling (Método de Von Neumann)
+
+Dado un heatmap normalizado $P(x, y) = H(x, y) / \sum H$:
+
+**Algoritmo:**
+1. Generar candidato $(x, y) \sim \text{Uniform}(\text{imagen})$
+2. Generar umbral $u \sim \text{Uniform}(0, P_{\max})$ donde $P_{\max} = \max_{x,y} P(x, y)$
+3. **Aceptar** si $u < P(x, y)$, **rechazar** en caso contrario
+4. Repetir hasta obtener $N$ muestras aceptadas
+
+**Tasa de aceptación esperada**: $\frac{1}{P_{\max} \cdot W \cdot H}$, donde $W \times H$ es el tamaño del heatmap.
+
+Para heatmaps peaked (pico concentrado, $P_{\max}$ alto relativo a la media), la relación pico/media es grande, pero la región de aceptación es pequeña y concentrada, lo que produce una tasa de aceptación razonable (típicamente 2-10 intentos por muestra aceptada).
+
+**Vectorización**: En lugar de generar candidatos uno a uno, se procesan **lotes** de 5000 candidatos simultáneamente con operaciones NumPy vectorizadas, evaluando `thresholds < probs` en un solo paso. Esto resulta ~100× más rápido que un bucle Python.
+
+**Mecanismo de seguridad**: Si tras 100 iteraciones de lotes no se han acumulado suficientes muestras (heatmap extremadamente plano), se lanza un error sugiriendo usar importance sampling.
+
+#### 6.3 Importance Sampling (CDF Inversa)
+
+**Algoritmo:**
+1. Aplanar el heatmap a un PMF (probability mass function) 1D de longitud $W \times H$
+2. Usar `np.random.choice` con `p=PMF` para muestrear $N$ índices
+3. Convertir índices planos a coordenadas 2D: $y = \lfloor \text{idx} / W \rfloor$, $x = \text{idx} \mod W$
+
+**Ventajas sobre rejection sampling:**
+- **Tiempo determinístico**: Siempre genera exactamente $N$ muestras en un solo paso
+- **Funciona bien con heatmaps planos**: No hay rechazo, la eficiencia no depende de $P_{\max}$
+- Internamente, NumPy usa el algoritmo de Walker's alias method, que es $O(N)$
+
+**Desventaja:** Produce muestras en coordenadas enteras (píxeles discretos), lo que hace el jitter de dequantización especialmente importante.
+
+#### 6.4 Stratified Sampling (Reducción de Varianza)
+
+**Algoritmo:**
+1. Dividir el heatmap en una rejilla de $R \times C$ celdas (por defecto 8×8)
+2. Calcular la masa de probabilidad total en cada celda: $m_{ij} = \sum_{(x,y) \in \text{celda}_{ij}} P(x, y)$
+3. Asignar muestras proporcionalmente: $n_{ij} = \text{Multinomial}(N, \{m_{ij}\})$
+4. Muestrear uniformemente dentro de cada celda
 
 **Ventajas:**
-- Mejor identificabilidad del modelo
-- Interpretación física: incertidumbre simétrica
-- Convergencia más rápida del algoritmo EM
+- **Menor varianza** que muestreo aleatorio simple: cada región del heatmap está representada proporcionalmente
+- **Cobertura garantizada**: Todas las subregiones con masa no nula recibirán muestras
+- **Captura multimodalidad**: Si hay dos picos en celdas distintas, ambos recibirán muestras
 
-### Algoritmo EM Personalizado
+**Caso de uso principal:** Heatmaps bimodales donde queremos asegurar que ambos picos están bien representados en las muestras para que el GMM los pueda detectar.
 
-**E-step**: Calcula responsabilidades (probabilidades posteriores)
-```
-γₙₖ = πₖ · 𝒩(xₙ | μₖ, Σₖ) / Σⱼ πⱼ · 𝒩(xₙ | μⱼ, Σⱼ)
-```
+#### 6.5 Dequantización (Jitter Sub-píxel)
 
-**M-step**: Actualiza parámetros con regularización
-```
-μₖ ← Σₙ γₙₖ · xₙ / Σₙ γₙₖ
-Σₖ ← (Σₙ γₙₖ · (xₙ - μₖ)(xₙ - μₖ)ᵀ) / Σₙ γₙₖ + λI
-```
+Las muestras del heatmap caen en coordenadas **enteras** (píxeles). Si muchas muestras coinciden en el mismo píxel, la matriz de covarianza empírica será **singular** (rango deficiente). Esto causa problemas numéricos en el GMM.
 
-**Convergencia**: Se detiene cuando `|ΔlogL| < tol` o se alcanza `max_iter`
+**Solución**: Añadir ruido uniforme sub-píxel:
 
-### Selección de Modelo (AIC/BIC)
+$$\mathbf{x}_{\text{jittered}} = \mathbf{x}_{\text{discrete}} + \epsilon, \qquad \epsilon \sim \text{Uniform}(-\delta, +\delta)$$
 
-Compara automáticamente modelos con K=1 y K=2 componentes:
+Con $\delta = 0.5$ (medio píxel por defecto). Esto:
+- **Rompe empates**: Muestras que caían en el mismo píxel se dispersan ligeramente
+- **Modela discretización**: Refleja que la posición real podría estar en cualquier punto dentro del píxel
+- **Garantiza inversibilidad**: $\boldsymbol{\Sigma}$ siempre será definida positiva
 
-```
-AIC = -2·logL + 2·(#params)
-BIC = -2·logL + log(N)·(#params)
-Score = w_aic·AIC + w_bic·BIC
-```
+#### 6.6 Temperature Scaling (Modulación del Heatmap)
 
-Elige el modelo con menor score (por defecto usa solo BIC: `w_bic=1, w_aic=0`).
+Antes de muestrear, se puede modular la "peakedness" del heatmap con un parámetro de temperatura $T$:
+
+$$H_T(x, y) = \frac{H(x, y)^{1/T}}{Z}, \qquad Z = \sum_{x,y} H(x, y)^{1/T}$$
+
+- $T \to 0$: El heatmap se concentra en el argmax (determinístico)
+- $T = 1$: Sin cambio
+- $T \to \infty$: El heatmap se aplana hacia distribución uniforme (máxima entropía)
+
+Valores bajos de $T$ producen muestras más concentradas alrededor del pico, lo que puede ser útil cuando el heatmap original es muy difuso y queremos amplificar la señal. La implementación opera en **espacio logarítmico** para estabilidad numérica: $\log H_T = \frac{1}{T} \log H - \log Z$.
+
+---
+
+### 7. Scale TTA: Test-Time Augmentation Multi-Escala
+
+#### 7.1 El Problema: Contaminación de Heatmaps por Pérdida de FOV
+
+En el paradigma **top-down** de pose estimation, el modelo recibe un **recorte (crop)** del bounding box de la persona, redimensionado a un tamaño fijo (ej: 256×192). Escalar el bbox equivale a hacer **zoom**:
+- **Scale < 1.0 (zoom in)**: Bbox más pequeño → se ve menos contexto → más resolución sobre la persona, pero keypoints periféricos **salen del campo de visión (FOV)**
+- **Scale > 1.0 (zoom out)**: Bbox más grande → más contexto → menor resolución sobre la persona
+
+Cuando un keypoint sale del FOV, el modelo produce un heatmap **difuso** (casi uniforme) para ese keypoint. Si simplemente promediamos los heatmaps de todas las escalas, estos heatmaps difusos **"envenenan"** el promedio, degradando la calidad de la predicción. Un promedio naïve baja el pico del heatmap de la escala 1.0 sin aportar información útil.
+
+#### 7.2 La Solución: Ponderación Continua por Confianza
+
+En lugar de descartar heatmaps con un umbral duro (que introduce discontinuidades y requiere tunear un hiperparámetro arbitrario), se usa una **ponderación suave** basada en la calidad del heatmap.
+
+**Definición de confianza por keypoint $k$ y escala $s$:**
+
+Para un heatmap individual $H_k^{(s)}$ de dimensiones $H \times W$:
+
+$$\text{peak}_k = \max_{x,y} H_k^{(s)}(x, y)$$
+$$\text{mean}_k = \frac{1}{HW} \sum_{x,y} H_k^{(s)}(x, y)$$
+$$\text{sharpness}_k = \frac{\text{peak}_k}{\text{mean}_k + \epsilon}$$
+
+**Score de nitidez** (transformación sigmoidal):
+
+$$\text{sharpness\_score}_k = \left(1 - \frac{1}{1 + \text{sharpness}_k / S}\right)^\beta$$
+
+Donde $S$ es el parámetro `sharpness_scale` que controla la pendiente de la curva sigmoidal.
+
+**Confianza final:**
+
+$$\text{conf}_k^{(s)} = \text{peak}_k^\alpha \cdot \text{sharpness\_score}_k$$
+
+**Interpretación de los parámetros $\alpha$ y $\beta$:**
+
+- $\alpha$ (`peak_exponent`): Controla cuánto importa el valor absoluto del pico.
+  - $\alpha > 1$: Suprime agresivamente heatmaps con picos débiles
+  - $\alpha < 1$: Más permisivo con picos débiles
+  - $\alpha = 1$: Lineal (por defecto)
+
+- $\beta$ (`sharpness_exponent`): Controla cuánto importa la nitidez relativa.
+  - $\beta > 1$: Enfatiza la diferencia entre heatmaps nítidos y difusos
+  - $\beta < 1$: Aplana las diferencias de nitidez
+  - $\beta = 1$: Lineal (por defecto)
+
+- $S$ (`sharpness_scale`): Punto de inflexión de la curva sigmoidal.
+  - $S$ grande: Curva más suave, menos penalización a mapas difusos
+  - $S$ pequeño: Curva más agresiva, penalización fuerte a mapas difusos
+
+**¿Por qué esta fórmula?** Combina dos señales independientes:
+1. El **peak** mide la confianza absoluta del detector — un pico alto significa que el modelo está seguro de haber encontrado el keypoint.
+2. El **sharpness** mide la concentración relativa — un heatmap con peak alto pero mean también alto (distribución plana) no es informativo.
+
+La función sigmoidal $1 - \frac{1}{1+x}$ mapea $[0, \infty) \to [0, 1)$ de forma suave, sin discontinuidades.
+
+#### 7.3 Escalado del Bounding Box
+
+El bbox COCO $(x, y, w, h)$ se escala alrededor de su centro:
+
+$$c_x = x + w/2, \qquad c_y = y + h/2$$
+$$w' = w \cdot s, \qquad h' = h \cdot s$$
+$$x' = c_x - w'/2, \qquad y' = c_y - h'/2$$
+
+Los bordes se **clampean** a los límites de la imagen para evitar coordenadas fuera de rango.
+
+#### 7.4 Transformación Inversa de Heatmaps
+
+Los heatmaps de cada escala están en **espacios de coordenadas diferentes** (porque cada crop tiene un bounding box distinto). Antes de agregar, deben transformarse al espacio de la escala de referencia (1.0×).
+
+La transformación usa la geometría afín de MMPose. Cada predicción tiene metadatos `(input_center, input_scale)` que describen cómo se mapeó el bbox al crop del modelo. La transformación inversa es:
+
+**Paso 1**: Píxel del heatmap de salida → coordenadas de imagen (usando metadatos del bbox original):
+
+$$\text{img}_x = p_x \cdot \frac{s^{(o)}_x}{W} + c^{(o)}_x - \frac{s^{(o)}_x}{2}$$
+
+**Paso 2**: Coordenadas de imagen → píxel del heatmap escalado (inversa de los metadatos del bbox escalado):
+
+$$p_x^{(s)} = \left(\text{img}_x - c^{(s)}_x + \frac{s^{(s)}_x}{2}\right) \cdot \frac{W}{s^{(s)}_x}$$
+
+**Paso 3**: Convertir a coordenadas de `grid_sample` en $[-1, 1]$ con `align_corners=False`:
+
+$$g_x = \frac{2(p_x^{(s)} + 0.5)}{W} - 1$$
+
+La interpolación bilineal con `padding_mode='zeros'` y `align_corners=False` es compatible con la convención de coordenadas de **DARK Pose** (Zhang et al., 2020) y de MMPose.
+
+#### 7.5 Agregación Multi-Escala
+
+Con los heatmaps transformados y las confianzas calculadas, se agregan:
+
+**Weighted Mean** (recomendado):
+
+$$\hat{w}_k^{(s)} = \frac{\text{conf}_k^{(s)}}{\sum_{s'} \text{conf}_k^{(s')}}$$
+
+$$H_k^{\text{agg}}(x, y) = \sum_s \hat{w}_k^{(s)} \cdot H_k^{(s)}(x, y)$$
+
+Los pesos se normalizan por keypoint: cada keypoint puede tener una distribución diferente de pesos entre escalas. Si la confianza total para un keypoint es cercana a cero (todas las escalas dan heatmaps difusos), se recurre a pesos uniformes $1/S$ como fallback.
+
+**Max Confidence**:
+
+$$H_k^{\text{agg}} = H_k^{(s^*)}, \qquad s^* = \arg\max_s \text{conf}_k^{(s)}$$
+
+Simplemente elige el heatmap de la escala con mayor confianza para cada keypoint.
 
 ---
 
