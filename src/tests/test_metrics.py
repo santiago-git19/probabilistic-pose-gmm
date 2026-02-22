@@ -178,7 +178,7 @@ def test_oks_perfect(coco_keypoints):
     area = 10000.0  # Arbitrary bbox area
     
     # Use same coords for pred and gt
-    oks = compute_oks(pred, pred, visible, area)
+    oks, _ = compute_oks(pred, pred, visible, area)
     
     assert 0.99 <= oks <= 1.0  # Allow small numerical error
 
@@ -194,7 +194,7 @@ def test_oks_distant(distant_prediction):
     gt_full = np.tile(gt, (9, 1))[:17]
     visible_full = np.ones(17, dtype=np.int32) * 2
     
-    oks = compute_oks(pred_full, gt_full, visible_full, area)
+    oks, _ = compute_oks(pred_full, gt_full, visible_full, area)
     
     assert oks < 0.1  # Very low similarity
 
@@ -205,7 +205,7 @@ def test_oks_partial_visible(coco_keypoints_partial_visible):
     area = 10000.0
     
     # Make prediction perfect
-    oks = compute_oks(gt, gt, visible, area)
+    oks, _ = compute_oks(gt, gt, visible, area)
     
     assert 0.99 <= oks <= 1.0
 
@@ -217,7 +217,7 @@ def test_oks_no_visible():
     visible = np.zeros(17, dtype=np.int32)  # All invisible
     area = 10000.0
     
-    oks = compute_oks(pred, gt, visible, area)
+    oks, _ = compute_oks(pred, gt, visible, area)
     
     assert oks == 0.0
 
@@ -230,7 +230,7 @@ def test_oks_custom_sigmas():
     area = 10000.0
     sigmas = np.array([0.05], dtype=np.float32)  # More tolerant
     
-    oks = compute_oks(pred, gt, visible, area, sigmas=sigmas)
+    oks, _ = compute_oks(pred, gt, visible, area, sigmas=sigmas)
     
     assert 0.5 <= oks <= 1.0
 
@@ -557,7 +557,7 @@ def test_full_pipeline_integration(simple_gmm, coco_keypoints):
     
     # Compute all metrics
     area = 10000.0
-    oks = compute_oks(pred, gt, visible, area)
+    oks, _ = compute_oks(pred, gt, visible, area)
     
     # Use first keypoint for NLL
     gt_single = gt[0].reshape(1, 2)
@@ -613,7 +613,7 @@ def test_edge_case_zero_area_oks():
     visible = np.ones(17, dtype=np.int32)
     area = 1e-10  # Very small
     
-    oks = compute_oks(pred, gt, visible, area)
+    oks, _ = compute_oks(pred, gt, visible, area)
     
     assert np.isfinite(oks)
 

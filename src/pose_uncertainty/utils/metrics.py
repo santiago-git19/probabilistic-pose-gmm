@@ -80,7 +80,7 @@ def compute_oks(
     visible_flags: npt.NDArray[np.int32],
     area: float,
     sigmas: Optional[npt.NDArray[np.float32]] = None
-) -> float:
+) -> tuple[float, npt.NDArray[np.float32]]:
     """
     Compute Object Keypoint Similarity (OKS) between predicted and ground truth poses.
     
@@ -109,7 +109,10 @@ def compute_oks(
         sigmas: Per-keypoint standard deviations (κᵢ). If None, uses COCO defaults.
     
     Returns:
-        OKS score ∈ [0, 1].
+        Tuple of (mean_oks, per_keypoint_oks):
+            - mean_oks: OKS score ∈ [0, 1] averaged over visible keypoints.
+            - per_keypoint_oks: Array of shape (num_keypoints,) with OKS for each keypoint.
+                               Non-visible keypoints are set to NaN.
     
     COCO Defaults (17 keypoints):
         σ = [.026, .025, .025, .035, .035, .079, .079, .072, .072, .062, .062, 
@@ -120,8 +123,9 @@ def compute_oks(
         >>> gt = np.array([[100.5, 200.2], [148.0, 248.0]])
         >>> visible = np.array([2, 2])
         >>> area = 10000.0
-        >>> oks = compute_oks(pred, gt, visible, area)
-        >>> # OKS ≈ 0.99 (very close predictions)
+        >>> mean_oks, per_kp_oks = compute_oks(pred, gt, visible, area)
+        >>> # mean_oks ≈ 0.99 (very close predictions)
+        >>> # per_kp_oks ≈ [0.99, 0.98]
     """
     # Use COCO defaults if not provided
     if sigmas is None:
@@ -136,7 +140,9 @@ def compute_oks(
     # Filter visible keypoints (v > 0)
     visible_mask = visible_flags > 0
     if not np.any(visible_mask):
-        return 0.0  # No visible keypoints -> OKS = 0
+        # No visible keypoints -> OKS = 0, all per-keypoint scores are NaN
+        per_keypoint_oks = np.full(num_keypoints, np.nan, dtype=np.float32)
+        return 0.0, per_keypoint_oks
     
     # Compute squared distances
     distances = compute_l2_distance(pred_coords, gt_coords)
@@ -150,10 +156,14 @@ def compute_oks(
     variance = 2 * (scale ** 2) * (sigmas ** 2)
     oks_per_keypoint = np.exp(-squared_distances / variance)
     
+    # Set non-visible keypoints to NaN in the per-keypoint array
+    per_keypoint_oks = oks_per_keypoint.copy()
+    per_keypoint_oks[~visible_mask] = np.nan
+    
     # Average over visible keypoints only
     oks = np.sum(oks_per_keypoint[visible_mask]) / np.sum(visible_mask)
     
-    return float(oks)
+    return float(oks), per_keypoint_oks
 
 
 def compute_nll(
