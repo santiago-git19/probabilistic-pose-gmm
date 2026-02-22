@@ -20,16 +20,41 @@ enabled: true
 #  angles: [-15, -10, -5, 0, 5, 10, 15]
 
 # Scale parameters (multiplicative factors)
-#scale:
-#  enabled: true
-#  factors: [0.85, 0.9, 0.95, 1.0, 1.05, 1.1, 1.15]
+# Operates on bounding boxes, NOT on images.  Each scale runs the full
+# flip+photometric inner loop, then heatmaps are inverse-transformed and
+# aggregated with confidence-weighted averaging to avoid heatmap poisoning
+# from out-of-FOV keypoints.
+scale:
+  enabled: false                     # master switch – flip-only by default
+  scales: [0.85, 0.925, 1.0, 1.075, 1.15]
+  confidence_threshold: 0.01        # soft floor (deprecated, kept for compatibility)
+  aggregation: weighted_mean        # or max_confidence
+  
+  # Confidence weighting parameters (for weighted_mean aggregation)
+  # Formula: conf = peak^α × (1 - 1/(1 + sharp/S))^β
+  #   where sharp = peak / (mean + ε)
+  # These control how aggressively out-of-FOV (diffuse) heatmaps are suppressed.
+  
+  sharpness_scale: 5.0              # S: divisor in sigmoid term
+                                    #    Higher → gentler weighting curve
+                                    #    Lower  → more aggressive suppression
+  
+  epsilon: 1.0e-10                  # ε: avoid division by zero in sharpness
+  
+  peak_exponent: 1.0                # α: exponent on peak value
+                                    #    > 1 → suppress weak peaks more
+                                    #    < 1 → more lenient
+  
+  sharpness_exponent: 1.0           # β: exponent on sharpness score
+                                    #    > 1 → emphasize sharp heatmaps more
+                                    #    < 1 → flatten differences
 
 # Horizontal flip
 flip:
-  enabled: false
+  enabled: true
   flip_mode: heatmap  # Options: heatmap, udp_combined, offset
   shift_heatmap: true  # Shift flipped heatmaps for better alignment
-  flip_indices: null  # Indices of symmetric keypoints (e.g., [1, 0, 3, 2, ...])
+  flip_indices: [0, 2, 1, 4, 3, 6, 5, 8, 7, 10, 9, 12, 11, 14, 13, 16, 15]  # Indices of symmetric keypoints (e.g., [1, 0, 3, 2, ...])
 
 # Photometric augmentations (cartesian product with geometric)
 photometric:
