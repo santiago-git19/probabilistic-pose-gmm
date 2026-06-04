@@ -27,10 +27,10 @@ install:
 	poetry run pip uninstall -y mmcv
 ifeq ($(BACKEND), cuda)
 	@echo " -> Usando CUDA 11.3 para instalar MMCV..., si usas otra versión, cambia la URL VER -> https://mmcv.readthedocs.io/en/latest/get_started/installation.html#installation"
-	pip install mmcv==2.1.0 -f https://download.openmmlab.com/mmcv/dist/cu113/torch2.1/index.html
+	poetry run pip install mmcv==2.1.0 -f https://download.openmmlab.com/mmcv/dist/cu121/torch2.1/index.html
 else
 	@echo " -> Usando CPU para instalar MMCV..."
-	pip install mmcv==2.1.0 -f https://download.openmmlab.com/mmcv/dist/cpu/torch2.1/index.html
+	poetry run pip install mmcv==2.1.0 -f https://download.openmmlab.com/mmcv/dist/cpu/torch2.1/index.html
 endif
 	poetry run mim install "mmdet==3.2.0"
 
