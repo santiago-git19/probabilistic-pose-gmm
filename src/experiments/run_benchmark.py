@@ -53,6 +53,7 @@ def main(cfg: DictConfig) -> None:
         log.warning("DEBUG MODE: Limited to %d images", debug_limit)
 
     # --- wandb: un solo run para todo el benchmark -----------------------
+    
     with wandb_run(
         cfg,
         name=f"benchmark_{cfg.model.name}_{cfg.dataset.name}",

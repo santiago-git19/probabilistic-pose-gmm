@@ -6,6 +6,47 @@ from typing import Iterator, Dict, Any, List
 from pycocotools.coco import COCO
 from .utils.types import ImageSample, Keypoint
 
+
+def _resize_image_and_annotations(
+    img_array: np.ndarray,
+    bbox: tuple,
+    keypoints: List[Keypoint],
+    resize_scale: float,
+) -> tuple:
+    """Resize image and scale annotations by the same factor."""
+    if resize_scale is None or abs(resize_scale - 1.0) < 1e-8:
+        return img_array, bbox, keypoints
+
+    if resize_scale <= 0:
+        raise ValueError(f"resize_scale must be > 0, got {resize_scale}")
+
+    height, width = img_array.shape[:2]
+    new_width = max(1, int(round(width * resize_scale)))
+    new_height = max(1, int(round(height * resize_scale)))
+    interpolation = cv2.INTER_AREA if resize_scale < 1.0 else cv2.INTER_LINEAR
+    resized = cv2.resize(img_array, (new_width, new_height), interpolation=interpolation)
+
+    x, y, w, h = bbox
+    scaled_bbox = (
+        float(x * resize_scale),
+        float(y * resize_scale),
+        float(w * resize_scale),
+        float(h * resize_scale),
+    )
+
+    scaled_keypoints = [
+        Keypoint(
+            id=kp.id,
+            x=float(kp.x * resize_scale),
+            y=float(kp.y * resize_scale),
+            confidence=kp.confidence,
+            name=kp.name,
+        )
+        for kp in keypoints
+    ]
+
+    return resized, scaled_bbox, scaled_keypoints
+
 class PoseDatasetAdapter(ABC):
     """
     Clase abstracta (Interface).
@@ -20,15 +61,17 @@ class PoseDatasetAdapter(ABC):
         pass
 
 class COCOLoader(PoseDatasetAdapter):
-    def __init__(self, data_root: str, ann_file: str, image_dir: str):
+    def __init__(self, data_root: str, ann_file: str, image_dir: str, resize_scale: float = 1.0):
         """
         :param data_root: Ruta base (ej: ./data/coco)
         :param ann_file: Nombre del json (ej: annotations/person_keypoints_val2017.json)
         :param image_dir: Carpeta de imágenes (ej: val2017)
+        :param resize_scale: Factor de escala para reducir o aumentar la resolución.
         """
         self.data_root = data_root
         self.image_dir = os.path.join(data_root, image_dir)
         self.ann_path = os.path.join(data_root, ann_file)
+        self.resize_scale = resize_scale
         
         # Inicializar API de COCO
         print(f"Cargando anotaciones desde {self.ann_path}...")
@@ -114,27 +157,37 @@ class COCOLoader(PoseDatasetAdapter):
                 continue # Skip si la imagen está corrupta
             img_array = cv2.cvtColor(img_array, cv2.COLOR_BGR2RGB)
 
+            keypoints = self._parse_keypoints(main_person['keypoints'], num_keypoints=17)
+            img_array, bbox, keypoints = _resize_image_and_annotations(
+                img_array,
+                tuple(bbox),
+                keypoints,
+                self.resize_scale,
+            )
+
             yield ImageSample(
                 image_id=img_id,
                 image_path=path,
                 image_array=img_array,
-                bbox=tuple(bbox),
-                ground_truth_keypoints=self._parse_keypoints(main_person['keypoints'], num_keypoints=17),
+                bbox=bbox,
+                ground_truth_keypoints=keypoints,
                 dataset_source="coco"
             )
 
 class CrowdPoseLoader(PoseDatasetAdapter):
-    def __init__(self, data_root: str, ann_file: str, image_dir: str):
+    def __init__(self, data_root: str, ann_file: str, image_dir: str, resize_scale: float = 1.0):
         """
         Loader for CrowdPose dataset.
         
         :param data_root: Base path (e.g., ./data/crowdpose)
         :param ann_file: Annotation JSON file (e.g., json/crowdpose_val.json)
         :param image_dir: Image directory (e.g., images)
+        :param resize_scale: Factor de escala para reducir o aumentar la resolución.
         """
         self.data_root = data_root
         self.image_dir = os.path.join(data_root, image_dir)
         self.ann_path = os.path.join(data_root, ann_file)
+        self.resize_scale = resize_scale
         
         # Load CrowdPose annotations (COCO format compatible)
         print(f"Cargando anotaciones desde {self.ann_path}...")
@@ -221,27 +274,37 @@ class CrowdPoseLoader(PoseDatasetAdapter):
                 continue  # Skip if image is corrupted
             img_array = cv2.cvtColor(img_array, cv2.COLOR_BGR2RGB)
 
+            keypoints = self._parse_keypoints(main_person['keypoints'], num_keypoints=14)
+            img_array, bbox, keypoints = _resize_image_and_annotations(
+                img_array,
+                tuple(bbox),
+                keypoints,
+                self.resize_scale,
+            )
+
             yield ImageSample(
                 image_id=img_id,
                 image_path=path,
                 image_array=img_array,
-                bbox=tuple(bbox),
-                ground_truth_keypoints=self._parse_keypoints(main_person['keypoints'], num_keypoints=14),
+                bbox=bbox,
+                ground_truth_keypoints=keypoints,
                 dataset_source="crowdpose"
             )
 
 class OCHumanLoader(PoseDatasetAdapter):
-    def __init__(self, data_root: str, ann_file: str, image_dir: str):
+    def __init__(self, data_root: str, ann_file: str, image_dir: str, resize_scale: float = 1.0):
         """
         Loader for OCHuman dataset.
         
         :param data_root: Base path (e.g., ./data/ochuman)
         :param ann_file: Annotation JSON file (e.g., annotations/ochuman_coco_format_val_range_0.00_1.00.json)
         :param image_dir: Image directory (e.g., images)
+        :param resize_scale: Factor de escala para reducir o aumentar la resolución.
         """
         self.data_root = data_root
         self.image_dir = os.path.join(data_root, image_dir)
         self.ann_path = os.path.join(data_root, ann_file)
+        self.resize_scale = resize_scale
         
         # Load OCHuman annotations (COCO format compatible)
         print(f"Cargando anotaciones desde {self.ann_path}...")
@@ -329,11 +392,19 @@ class OCHumanLoader(PoseDatasetAdapter):
                 continue  # Skip if image is corrupted
             img_array = cv2.cvtColor(img_array, cv2.COLOR_BGR2RGB)
 
+            keypoints = self._parse_keypoints(main_person['keypoints'], num_keypoints=17)
+            img_array, bbox, keypoints = _resize_image_and_annotations(
+                img_array,
+                tuple(bbox),
+                keypoints,
+                self.resize_scale,
+            )
+
             yield ImageSample(
                 image_id=img_id,
                 image_path=path,
                 image_array=img_array,
-                bbox=tuple(bbox),
-                ground_truth_keypoints=self._parse_keypoints(main_person['keypoints'], num_keypoints=17),
+                bbox=bbox,
+                ground_truth_keypoints=keypoints,
                 dataset_source="ochuman"
             )

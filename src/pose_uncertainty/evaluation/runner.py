@@ -95,6 +95,7 @@ def _build_dataloader(cfg: DictConfig) -> Any:
         data_root=ds_cfg.root_dir,
         ann_file=ds_cfg.annotations,
         image_dir=ds_cfg.images,
+        resize_scale=OmegaConf.select(cfg, "dataset.resize_scale", default=1.0),
     )
 
 
