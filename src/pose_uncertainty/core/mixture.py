@@ -360,8 +360,10 @@ class RobustGaussianMixture:
         gaussian_probs = np.zeros((n_samples, self.n_components))
         for k, comp in enumerate(self.components_):
             try:
-                rv = multivariate_normal(mean=comp.mean, cov=comp.covariance, allow_singular=True)
-                gaussian_probs[:, k] = comp.weight * rv.pdf(samples)
+                #rv = multivariate_normal(mean=comp.mean, cov=comp.covariance, allow_singular=True)
+                #gaussian_probs[:, k] = comp.weight * rv.pdf(samples)
+                pdf_values = self._gaussian_pdf(samples, comp.mean, comp.covariance)
+                gaussian_probs[:, k] = comp.weight * pdf_values
             except Exception as e:
                 logger.warning(f"Component {k} density computation failed: {e}")
                 gaussian_probs[:, k] = 0.0
@@ -462,8 +464,10 @@ class RobustGaussianMixture:
         probs = np.zeros(n_samples)
         for comp in self.components_:
             try:
-                rv = multivariate_normal(mean=comp.mean, cov=comp.covariance, allow_singular=True)
-                probs += comp.weight * rv.pdf(samples)
+                #rv = multivariate_normal(mean=comp.mean, cov=comp.covariance, allow_singular=True)
+                #probs += comp.weight * rv.pdf(samples)
+                pdf_values = self._gaussian_pdf(samples, comp.mean, comp.covariance)
+                probs += comp.weight * pdf_values
             except Exception:
                 pass
         
@@ -473,6 +477,46 @@ class RobustGaussianMixture:
         # Log-likelihood
         probs = np.maximum(probs, 1e-300)
         return np.sum(np.log(probs))
+    
+    def _gaussian_pdf(
+        self, 
+        samples: npt.NDArray[np.float64], 
+        mean: npt.NDArray[np.float64], 
+        cov: npt.NDArray[np.float64]
+    ) -> npt.NDArray[np.float64]:
+        """
+        Calcula la PDF multivariante vectorizada para N muestras.
+        Reemplaza a scipy.stats.multivariate_normal.pdf para máxima eficiencia.
+        """
+        d = samples.shape[1]
+        
+        try:
+            # Inversa y determinante (muy rápido para 2x2)
+            inv_cov = np.linalg.inv(cov)
+            det_cov = np.linalg.det(cov)
+            
+            # Protección contra matrices singulares o mal condicionadas
+            if det_cov <= 0:
+                return np.zeros(len(samples), dtype=np.float64)
+                
+        except np.linalg.LinAlgError:
+            return np.zeros(len(samples), dtype=np.float64)
+            
+        # Constante de normalización
+        norm_const = 1.0 / np.sqrt(((2 * np.pi) ** d) * det_cov)
+        
+        # Desviación respecto a la media (N, 2)
+        diff = samples - mean 
+        
+        # Cálculo eficiente de Mahalanobis con Einstein Summation:
+        # 'ni' (muestras x dimensiones), 'ij' (inversa covarianza), 'nj' (muestras x dimensiones)
+        # El resultado es un array 1D de tamaño N.
+        mahalanobis_sq = np.einsum('ni,ij,nj->n', diff, inv_cov, diff)
+        
+        # Prevenir underflow extremo antes de la exponencial
+        mahalanobis_sq = np.clip(mahalanobis_sq, a_min=None, a_max=700)
+        
+        return norm_const * np.exp(-0.5 * mahalanobis_sq)
     
     def compute_aic(self, n_samples: int) -> float:
         """
