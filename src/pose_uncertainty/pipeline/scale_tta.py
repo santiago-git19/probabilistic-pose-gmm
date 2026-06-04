@@ -247,7 +247,14 @@ def inverse_transform_heatmap(
 
     The affine mapping from heatmap pixel ``p`` to image coordinate is::
 
-        img = p * (input_scale / hm_size) + input_center - 0.5 * input_scale
+        img = p * (decoder_sf / input_size * input_scale)
+              + input_center - 0.5 * input_scale
+
+    For MSRA codec ``decoder_sf = input_size / hm_size`` so the formula
+    reduces to ``img = p * (input_scale / hm_size) + ...``.
+    For UDP codec ``decoder_sf = (input_size - 1) / (hm_size - 1)`` which
+    produces a ~1.6 % different slope and must be accounted for to avoid
+    systematic spatial bias.
 
     For ``grid_sample`` we compute the *inverse* for each output pixel:
 
@@ -283,20 +290,43 @@ def inverse_transform_heatmap(
     center_s = np.array(metadata_scaled["input_center"], dtype=np.float64)
     scale_s = np.array(metadata_scaled["input_scale"], dtype=np.float64)
 
+    # ---- Codec-aware per-pixel scale (MSRA vs UDP) -----------------------
+    # Forward mapping: img = hm * px_scale + (center - 0.5 * input_scale)
+    #   MSRA:  px_scale = input_scale / hm_size
+    #   UDP:   px_scale = decoder_sf / input_size * input_scale
+    # When decoder_scale_factor is available in metadata we use it so that
+    # the heatmap warping is consistent with MMPose's internal coordinate
+    # decoding.  For MSRA both formulas give the identical result; for UDP
+    # codec (used by ViTPose) the difference is ~1.6 % and causes a
+    # systematic spatial bias if ignored.
+    hm_size = np.array([W, H], dtype=np.float64)
+
+    if "decoder_scale_factor" in metadata_original and "input_size" in metadata_original:
+        dsf_o = np.array(metadata_original["decoder_scale_factor"], dtype=np.float64)
+        isz_o = np.array(metadata_original["input_size"], dtype=np.float64)
+        px_scale_o = dsf_o / isz_o * scale_o          # [sx, sy]
+    else:
+        px_scale_o = scale_o / hm_size                 # MSRA fallback
+
+    if "decoder_scale_factor" in metadata_scaled and "input_size" in metadata_scaled:
+        dsf_s = np.array(metadata_scaled["decoder_scale_factor"], dtype=np.float64)
+        isz_s = np.array(metadata_scaled["input_size"], dtype=np.float64)
+        px_scale_s = dsf_s / isz_s * scale_s
+    else:
+        px_scale_s = scale_s / hm_size
+
     # Build grid of output pixel centres (0-indexed) ------------------------
     gx = torch.arange(W, dtype=torch.float64)               # [0 .. W-1]
     gy = torch.arange(H, dtype=torch.float64)               # [0 .. H-1]
     gy_2d, gx_2d = torch.meshgrid(gy, gx, indexing="ij")   # (H, W)
 
     # Step 1: output pixel → image coords (original metadata)
-    #   img_x = hm_x * (scale_o_x / W) + center_o_x - 0.5 * scale_o_x
-    img_x = gx_2d * (scale_o[0] / W) + center_o[0] - 0.5 * scale_o[0]
-    img_y = gy_2d * (scale_o[1] / H) + center_o[1] - 0.5 * scale_o[1]
+    img_x = gx_2d * px_scale_o[0] + center_o[0] - 0.5 * scale_o[0]
+    img_y = gy_2d * px_scale_o[1] + center_o[1] - 0.5 * scale_o[1]
 
     # Step 2: image coords → scaled-bbox heatmap pixel (inverse)
-    #   hm_x_s = (img_x - center_s_x + 0.5 * scale_s_x) * (W / scale_s_x)
-    hm_x_s = (img_x - center_s[0] + 0.5 * scale_s[0]) * (W / scale_s[0])
-    hm_y_s = (img_y - center_s[1] + 0.5 * scale_s[1]) * (H / scale_s[1])
+    hm_x_s = (img_x - center_s[0] + 0.5 * scale_s[0]) / px_scale_s[0]
+    hm_y_s = (img_y - center_s[1] + 0.5 * scale_s[1]) / px_scale_s[1]
 
     # Step 3: pixel position → grid_sample coords [-1, 1]
     #   align_corners=False:  grid = 2 * (pixel + 0.5) / size - 1

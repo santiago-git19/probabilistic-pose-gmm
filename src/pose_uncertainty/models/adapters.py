@@ -436,6 +436,15 @@ class MMPoseAdapter(BasePoseModel):
             "input_size": metainfo.get("input_size", self.input_size)
         }
         
+        # Store decoder's scale_factor for correct heatmap→input coord mapping.
+        # MSRA codec uses input_size/heatmap_size (integer ratio),
+        # UDP codec uses (input_size-1)/(heatmap_size-1) (non-integer).
+        # Using the wrong one causes systematic bias (~1.6% for UDP).
+        if hasattr(self._model.head, 'decoder') and hasattr(self._model.head.decoder, 'scale_factor'):
+            metadata_dict["decoder_scale_factor"] = np.array(
+                self._model.head.decoder.scale_factor, dtype=np.float32
+            )
+        
         # Get confidence scores
         pred_instances = result.pred_instances
         scores = pred_instances.keypoint_scores[0]
@@ -639,6 +648,12 @@ class MMPoseAdapter(BasePoseModel):
                 "input_scale": metainfo.get("input_scale", None),
                 "input_size": metainfo.get("input_size", self.input_size)
             }
+            
+            # Store decoder's scale_factor (MSRA vs UDP codec compatibility)
+            if hasattr(self._model.head, 'decoder') and hasattr(self._model.head.decoder, 'scale_factor'):
+                metadata_dict["decoder_scale_factor"] = np.array(
+                    self._model.head.decoder.scale_factor, dtype=np.float32
+                )
             
             # Get confidence scores
             pred_instances = result.pred_instances
@@ -929,6 +944,34 @@ class MMPoseAdapter(BasePoseModel):
         self._flip_pairs_cache = COCO_FLIP_PAIRS
         return COCO_FLIP_PAIRS
     
+    @property
+    def uses_udp_codec(self) -> bool:
+        """Check if the model uses the UDP (Unbiased Data Processing) codec.
+
+        UDP codecs use ``(input_size - 1) / (heatmap_size - 1)`` as the
+        scale_factor, while MSRA codecs use ``input_size / heatmap_size``.
+        This distinction matters for flip-TTA alignment: MSRA requires a
+        1-pixel shift after flipping, but UDP does not.
+
+        Returns:
+            ``True`` if the decoder is a ``UDPHeatmap`` instance.
+        """
+        try:
+            decoder = self._model.head.decoder
+            return type(decoder).__name__ == "UDPHeatmap"
+        except AttributeError:
+            return False
+
+    @property
+    def shift_heatmap(self) -> bool:
+        """Whether to apply a 1-pixel shift when averaging flipped heatmaps.
+
+        Following MMPose convention:
+        - MSRA codec → ``True``  (corrects half-pixel misalignment)
+        - UDP  codec → ``False`` (unbiased mapping, no shift needed)
+        """
+        return not self.uses_udp_codec
+
     def _extract_input_size(self) -> Tuple[int, int]:
         """Extract input size from MMPose config."""
         try:
@@ -1255,11 +1298,16 @@ class MMPoseAdapter(BasePoseModel):
         input_scale = np.array(heatmap.metadata['input_scale'], dtype=np.float32)
         input_size = np.array(heatmap.metadata['input_size'], dtype=np.float32)  # [W, H]
         
-        # Get heatmap size from the data: shape is (K, H, W), we need [W, H]
-        heatmap_size = np.array([heatmap.data.shape[2], heatmap.data.shape[1]], dtype=np.float32)
-        
-        # Calculate scale_factor (same as MSRAHeatmap.scale_factor)
-        scale_factor = input_size / heatmap_size  # [W, H] / [W, H]
+        # Use decoder's ACTUAL scale_factor if available (codec-aware).
+        # MSRA codec: scale_factor = input_size / heatmap_size  (integer, e.g. [4, 4])
+        # UDP codec:  scale_factor = (input_size-1) / (heatmap_size-1)  (non-integer, e.g. [4.064, 4.048])
+        # Falling back to MSRA formula only when metadata doesn't include it.
+        if 'decoder_scale_factor' in heatmap.metadata:
+            scale_factor = np.array(heatmap.metadata['decoder_scale_factor'], dtype=np.float32)
+        else:
+            # Fallback: compute as input_size / heatmap_size (MSRA formula)
+            heatmap_size = np.array([heatmap.data.shape[2], heatmap.data.shape[1]], dtype=np.float32)
+            scale_factor = input_size / heatmap_size
         
         # Handle both single point (2,) and multiple points (N, 2)
         coords = np.asarray(heatmap_coords, dtype=np.float32)
@@ -1268,7 +1316,7 @@ class MMPoseAdapter(BasePoseModel):
             coords = coords.reshape(1, -1)
         
         # Apply transformation: heatmap space → input space → image space
-        # Step 1: Scale from heatmap to input space (replicates MSRAHeatmap decode)
+        # Step 1: Scale from heatmap to input space (using codec-specific scale_factor)
         coords_input = coords * scale_factor
         
         # Step 2: Transform from input space to image space (replicates decode_heatmaps)
@@ -1342,11 +1390,16 @@ class MMPoseAdapter(BasePoseModel):
 
         input_center = np.array(heatmap.metadata['input_center'], dtype=np.float32)
         input_scale = np.array(heatmap.metadata['input_scale'], dtype=np.float32)
+        input_size = np.array(heatmap.metadata['input_size'], dtype=np.float32)  # [W, H]
 
-        # heatmap_size as [W, H]
-        heatmap_size = np.array(
-            [heatmap.data.shape[2], heatmap.data.shape[1]], dtype=np.float32
-        )
+        # Use decoder's scale_factor if available (codec-aware: MSRA vs UDP)
+        if 'decoder_scale_factor' in heatmap.metadata:
+            decoder_sf = np.array(heatmap.metadata['decoder_scale_factor'], dtype=np.float32)
+        else:
+            heatmap_size = np.array(
+                [heatmap.data.shape[2], heatmap.data.shape[1]], dtype=np.float32
+            )
+            decoder_sf = input_size / heatmap_size
 
         # Handle both single point (2,) and multiple points (N, 2)
         coords = np.asarray(image_coords, dtype=np.float32)
@@ -1354,13 +1407,14 @@ class MMPoseAdapter(BasePoseModel):
         if coords.ndim == 1:
             coords = coords.reshape(1, -1)
 
-        # Inverse affine:
-        #   coords_hm = (coords_img - b) / A
-        # where A = diag(input_scale / heatmap_size), b = input_center - 0.5 * input_scale
+        # Inverse affine (image → heatmap):
+        #   Forward: coords_img = coords_hm * decoder_sf / input_size * input_scale
+        #                        + (input_center - 0.5 * input_scale)
+        #   Inverse: coords_hm = (coords_img - b) / fwd_scale
         b = input_center - 0.5 * input_scale
-        inv_scale = heatmap_size / input_scale  # element-wise: A⁻¹ diagonal
+        fwd_scale = decoder_sf / input_size * input_scale  # same as A diagonal
 
-        coords_hm = (coords - b) * inv_scale
+        coords_hm = (coords - b) / fwd_scale
 
         if original_shape == (2,):
             coords_hm = coords_hm.flatten()
@@ -1468,13 +1522,18 @@ class MMPoseAdapter(BasePoseModel):
 
         input_center = np.array(heatmap.metadata['input_center'], dtype=np.float32)
         input_scale = np.array(heatmap.metadata['input_scale'], dtype=np.float32)
+        input_size = np.array(heatmap.metadata['input_size'], dtype=np.float32)  # [W, H]
 
-        # Get heatmap size from the data: shape is (K, H, W), use [W, H]
-        heatmap_size = np.array([heatmap.data.shape[2], heatmap.data.shape[1]], dtype=np.float32)
+        # Use decoder's scale_factor if available (codec-aware: MSRA vs UDP)
+        if 'decoder_scale_factor' in heatmap.metadata:
+            decoder_sf = np.array(heatmap.metadata['decoder_scale_factor'], dtype=np.float32)
+        else:
+            heatmap_size = np.array([heatmap.data.shape[2], heatmap.data.shape[1]], dtype=np.float32)
+            decoder_sf = input_size / heatmap_size
 
-        # Simplified affine for MMPose decode:
-        # coords_img = coords_hm * (input_scale / heatmap_size) + (input_center - 0.5*input_scale)
-        scale = input_scale / heatmap_size
+        # Full affine: coords_img = coords_hm * decoder_sf / input_size * input_scale
+        #                          + (input_center - 0.5 * input_scale)
+        scale = decoder_sf / input_size * input_scale
         A = np.array([[scale[0], 0.0], [0.0, scale[1]]], dtype=np.float32)
         b = (input_center - 0.5 * input_scale).astype(np.float32)
         return A, b

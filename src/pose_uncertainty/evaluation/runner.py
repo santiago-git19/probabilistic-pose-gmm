@@ -365,7 +365,10 @@ class EvaluationRunner:
             for std_hm, meta in zip(heatmaps_list, aug_metas):
                 hm = std_hm.data.copy()
                 if meta.is_flipped:
-                    hm = TTAEngine.inverse_flip_heatmap(hm, self.model.flip_pairs)
+                    hm = TTAEngine.inverse_flip_heatmap(
+                        hm, self.model.flip_pairs,
+                        shift_heatmap=self.model.shift_heatmap,
+                    )
                 accum.append(hm)
                 # Prefer metadata from a non-flipped prediction for this scale
                 if scale_metadata is None and not meta.is_flipped and std_hm.metadata is not None:
@@ -632,18 +635,30 @@ class EvaluationRunner:
             ):
                 hm = std_hm.data.copy()
                 if meta.is_flipped:
-                    hm = TTAEngine.inverse_flip_heatmap(hm, self.model.flip_pairs)
+                    hm = TTAEngine.inverse_flip_heatmap(
+                        hm, self.model.flip_pairs,
+                        shift_heatmap=self.model.shift_heatmap,
+                    )
                 accum.append(hm)
                 # Prefer metadata from a non-flipped prediction for this scale
                 if scale_metadata is None and not meta.is_flipped and std_hm.metadata is not None:
                     scale_metadata = std_hm.metadata
 
+                # Get scale factor directly from config (not computed from bbox)
+                scale_factor = self.scale_aug.scales[scale_idx] if scale_idx < len(self.scale_aug.scales) else 1.0
+                
+                # Include scale factor in params for FiftyOne display
+                params_with_scale = dict(meta.photometric_params or {})
+                if len(scaled_bboxes) > 1:  # Only add scale info if multiple scales
+                    params_with_scale["scale"] = scale_factor
+                
                 tta_entry: Dict[str, Any] = {
                     "aug_id": len(tta_data),
                     "scale_idx": scale_idx,
                     "scale_bbox": list(sbbox),
+                    "scale_factor": float(scale_factor),
                     "name": meta.transform_type,
-                    "params": meta.photometric_params or {},
+                    "params": params_with_scale,
                     "image": aug_img,
                     "heatmap": hm,
                     "pred_coords": std_hm.data.mean(axis=(1, 2)),
