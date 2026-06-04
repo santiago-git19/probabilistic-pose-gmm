@@ -1327,19 +1327,33 @@ def _tta_label_and_slug(name: str, entry: Dict[str, Any]) -> Tuple[str, str]:
     """Build human-readable and slugified TTA names including key params."""
     base = str(name or "tta")
     params = entry.get("params", {}) if isinstance(entry, dict) else {}
+    
+    # Add scale information to the label if present
+    scale_idx = entry.get("scale_idx", None) if isinstance(entry, dict) else None
+    scale_factor = entry.get("scale_factor", None) if isinstance(entry, dict) else None
+    
+    if scale_idx is not None and scale_factor is not None:
+        base = f"Scale{scale_idx}(x{scale_factor:.3f}) {base}"
+    
     if not isinstance(params, dict) or not params:
         label = base
         return label, _slug_tta_name(label)
 
     parts: List[str] = []
     for k in sorted(params.keys()):
+        # Skip 'scale' from params since we already added it to base
+        if k == "scale":
+            continue
         v = params[k]
         if isinstance(v, (int, float, np.floating)):
             parts.append(f"{k}={float(v):.3g}")
         else:
             parts.append(f"{k}={v}")
 
-    label = f"{base} + " + " + ".join(parts)
+    if parts:
+        label = f"{base} + " + " + ".join(parts)
+    else:
+        label = base
     return label, _slug_tta_name(label)
 
 
