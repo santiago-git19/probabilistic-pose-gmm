@@ -66,7 +66,7 @@ EXPERIMENTS: Dict[str, Dict[str, Any]] = {
     # =========================================================================
     # BASELINE: Sin TTA
     # =========================================================================
-    '''
+    
     "00_Baseline_NoTTA": {
         "flip.enabled": False,
         "scale.enabled": False,
@@ -87,7 +87,7 @@ EXPERIMENTS: Dict[str, Dict[str, Any]] = {
         "photometric.noise.enabled": False,
         "photometric.blur.enabled": False,
     },
-    '''
+    
     # =========================================================================
     # SCALE ONLY - Diferentes configuraciones
     # =========================================================================

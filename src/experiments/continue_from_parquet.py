@@ -22,7 +22,7 @@ def main(cfg: DictConfig) -> None:
     """Continue evaluation from existing parquet file."""
     
     # Path to existing parquet
-    parquet_path = Path("outputs/2026-02-11/12-40-42/results_metadata.parquet")
+    parquet_path = Path("outputs/2026-02-17/23-00-36/results_metadata.parquet")
     
     if not parquet_path.exists():
         log.error("Parquet file not found: %s", parquet_path)
