@@ -43,7 +43,7 @@ def main(cfg: DictConfig) -> None:
     log.info("=" * 70)
     
     # ---- Determine data directory ---------------------------------------------
-    data_dir_cfg = "outputs\\2026-06-04\\09-40-27"#"outputs\\2026-02-23\\22-58-26"#"outputs\\2026-02-22\\21-53-46"#"outputs\\2026-02-18\\18-51-15"#"outputs\\2026-02-17\\23-00-36"#"outputs\\2026-02-16\\16-19-51"#"outputs\\2026-02-16\\15-47-00"#"outputs\\2026-02-16\\01-16-24"#"outputs\\2026-02-12\\18-08-52" # "outputs\\2026-02-12\\16-35-10"#"outputs\\2026-02-11\\12-40-42"# cfg.get("data_dir", None)
+    data_dir_cfg = "outputs\\2026-06-04\\12-33-24"#"outputs\\2026-02-23\\22-58-26"#"outputs\\2026-02-22\\21-53-46"#"outputs\\2026-02-18\\18-51-15"#"outputs\\2026-02-17\\23-00-36"#"outputs\\2026-02-16\\16-19-51"#"outputs\\2026-02-16\\15-47-00"#"outputs\\2026-02-16\\01-16-24"#"outputs\\2026-02-12\\18-08-52" # "outputs\\2026-02-12\\16-35-10"#"outputs\\2026-02-11\\12-40-42"# cfg.get("data_dir", None)
     
     if data_dir_cfg is not None:
         # User explicitly provided path
@@ -74,7 +74,8 @@ def main(cfg: DictConfig) -> None:
     log.info("Found %d analysis packets", len(pkl_files))
     
     # ---- Launch FiftyOne --------------------------------------------------
-    dataset_name = cfg.get("dataset_name", f"TFG_Eval_{cfg.model.name}_2")
+    dataset_name = cfg.get("dataset_name", f"TFG_Eval_{cfg.model.name}_resol_0.125")
+    overwrite_flag = cfg.get("overwrite", True)
     log.info("Creating FiftyOne dataset: %s", dataset_name)
     log.info("This may take a minute (decompressing images)...\n")
     
@@ -82,6 +83,7 @@ def main(cfg: DictConfig) -> None:
         dataset = create_evaluation_dataset(
             data_dir=str(data_dir),
             dataset_name=dataset_name,
+            overwrite=overwrite_flag
         )
         log.info("\n" + "=" * 70)
         log.info("[OK] FiftyOne app launched successfully!")

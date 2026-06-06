@@ -62,6 +62,7 @@ _N_KP = len(COCO_KP_NAMES)  # 17
 def create_evaluation_dataset(
     data_dir: str,
     dataset_name: str = "TFG_Evaluation",
+    overwrite: bool = True,
 ) -> Any:
     """Build a **grouped** FiftyOne dataset from Deep-Profiling packets.
 
@@ -78,6 +79,16 @@ def create_evaluation_dataset(
     fiftyone.Dataset
     """
     import fiftyone as fo
+
+    # --- fast run -----------------------------------------------------------
+    if fo.dataset_exists(dataset_name) and not overwrite:
+        logger.info(f"El dataset '{dataset_name}' ya existe. Saltando la carga de datos...")
+        dataset = fo.load_dataset(dataset_name)
+        session = fo.launch_app(dataset, address="0.0.0.0", remote=True)
+        print("Servidor activo. Presiona Ctrl+C para salir.")
+        session.wait()
+        return dataset
+
 
     data_path = Path(data_dir)
     pkl_files = sorted(data_path.glob("*.pkl.gz"))
