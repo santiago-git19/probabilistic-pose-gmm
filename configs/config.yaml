@@ -26,7 +26,14 @@ dataset:
   # Archivos específicos relativos a root_dir
   annotations: "annotations/person_keypoints_val2017.json"
   images: "val2017"
-  resize_scale: 0.5   # < 1.0 reduce la resolución de entrada antes del benchmark
+  resize_scale: 1   # < 1.0 reduce la resolución de entrada antes del benchmark
+  noise_mean: 0.0
+  noise_sigma: 0.0      # > 0 añade ruido gaussiano blanco
+  noise_seed: ${seed}   # Semilla para ruido reproducible por imagen
+  contrast_factor: 1.0  # < 1.0 disminuye el contraste
+  blur_kernel_size: 0    # > 1 aplica Gaussian blur (mejor impar: 3, 5, 7...)
+  blur_sigma: 0.0
+  smooth_kernel_size: 0  # > 1 aplica un filtro de media (low-pass / smooth)
   
   # Alternative: CrowdPose dataset configuration
   # To use CrowdPose, override with:

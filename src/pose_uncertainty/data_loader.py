@@ -2,7 +2,7 @@ import os
 import cv2
 import numpy as np
 from abc import ABC, abstractmethod
-from typing import Iterator, Dict, Any, List
+from typing import Iterator, List, Optional
 from pycocotools.coco import COCO
 from .utils.types import ImageSample, Keypoint
 
@@ -47,6 +47,62 @@ def _resize_image_and_annotations(
 
     return resized, scaled_bbox, scaled_keypoints
 
+
+def _normalize_kernel_size(kernel_size: Optional[int]) -> int:
+    if kernel_size is None:
+        return 0
+
+    kernel_size = int(kernel_size)
+    if kernel_size <= 1:
+        return 0
+
+    return kernel_size if kernel_size % 2 == 1 else kernel_size + 1
+
+
+def _apply_image_quality_augmentations(
+    img_array: np.ndarray,
+    image_id: int,
+    noise_mean: float,
+    noise_sigma: float,
+    noise_seed: Optional[int],
+    contrast_factor: float,
+    blur_kernel_size: Optional[int],
+    blur_sigma: float,
+    smooth_kernel_size: Optional[int],
+) -> np.ndarray:
+    """Apply optional quality degradations after resizing.
+
+    The transforms are deterministic per image when ``noise_seed`` is set,
+    which keeps benchmark runs reproducible across repeated passes.
+    """
+    result = img_array.astype(np.float32, copy=False)
+
+    if abs(contrast_factor - 1.0) > 1e-8:
+        result *= float(contrast_factor)
+
+    if noise_sigma and noise_sigma > 0:
+        seed_base = 0 if noise_seed is None else int(noise_seed)
+        local_seed = (seed_base + int(image_id)) % (2**32)
+        rng = np.random.default_rng(local_seed)
+        noise = rng.normal(
+            loc=float(noise_mean),
+            scale=float(noise_sigma),
+            size=result.shape,
+        ).astype(np.float32)
+        result += noise
+
+    result = np.clip(result, 0.0, 255.0)
+
+    blur_kernel = _normalize_kernel_size(blur_kernel_size)
+    if blur_kernel > 1:
+        result = cv2.GaussianBlur(result, (blur_kernel, blur_kernel), float(blur_sigma))
+
+    smooth_kernel = _normalize_kernel_size(smooth_kernel_size)
+    if smooth_kernel > 1:
+        result = cv2.blur(result, (smooth_kernel, smooth_kernel))
+
+    return np.clip(result, 0.0, 255.0).astype(np.uint8)
+
 class PoseDatasetAdapter(ABC):
     """
     Clase abstracta (Interface).
@@ -61,7 +117,20 @@ class PoseDatasetAdapter(ABC):
         pass
 
 class COCOLoader(PoseDatasetAdapter):
-    def __init__(self, data_root: str, ann_file: str, image_dir: str, resize_scale: float = 1.0):
+    def __init__(
+        self,
+        data_root: str,
+        ann_file: str,
+        image_dir: str,
+        resize_scale: float = 1.0,
+        noise_mean: float = 0.0,
+        noise_sigma: float = 0.0,
+        noise_seed: Optional[int] = None,
+        contrast_factor: float = 1.0,
+        blur_kernel_size: Optional[int] = 0,
+        blur_sigma: float = 0.0,
+        smooth_kernel_size: Optional[int] = 0,
+    ):
         """
         :param data_root: Ruta base (ej: ./data/coco)
         :param ann_file: Nombre del json (ej: annotations/person_keypoints_val2017.json)
@@ -72,6 +141,13 @@ class COCOLoader(PoseDatasetAdapter):
         self.image_dir = os.path.join(data_root, image_dir)
         self.ann_path = os.path.join(data_root, ann_file)
         self.resize_scale = resize_scale
+        self.noise_mean = noise_mean
+        self.noise_sigma = noise_sigma
+        self.noise_seed = noise_seed
+        self.contrast_factor = contrast_factor
+        self.blur_kernel_size = blur_kernel_size
+        self.blur_sigma = blur_sigma
+        self.smooth_kernel_size = smooth_kernel_size
         
         # Inicializar API de COCO
         print(f"Cargando anotaciones desde {self.ann_path}...")
@@ -164,6 +240,17 @@ class COCOLoader(PoseDatasetAdapter):
                 keypoints,
                 self.resize_scale,
             )
+            img_array = _apply_image_quality_augmentations(
+                img_array,
+                image_id=img_id,
+                noise_mean=self.noise_mean,
+                noise_sigma=self.noise_sigma,
+                noise_seed=self.noise_seed,
+                contrast_factor=self.contrast_factor,
+                blur_kernel_size=self.blur_kernel_size,
+                blur_sigma=self.blur_sigma,
+                smooth_kernel_size=self.smooth_kernel_size,
+            )
 
             yield ImageSample(
                 image_id=img_id,
@@ -175,7 +262,20 @@ class COCOLoader(PoseDatasetAdapter):
             )
 
 class CrowdPoseLoader(PoseDatasetAdapter):
-    def __init__(self, data_root: str, ann_file: str, image_dir: str, resize_scale: float = 1.0):
+    def __init__(
+        self,
+        data_root: str,
+        ann_file: str,
+        image_dir: str,
+        resize_scale: float = 1.0,
+        noise_mean: float = 0.0,
+        noise_sigma: float = 0.0,
+        noise_seed: Optional[int] = None,
+        contrast_factor: float = 1.0,
+        blur_kernel_size: Optional[int] = 0,
+        blur_sigma: float = 0.0,
+        smooth_kernel_size: Optional[int] = 0,
+    ):
         """
         Loader for CrowdPose dataset.
         
@@ -188,6 +288,13 @@ class CrowdPoseLoader(PoseDatasetAdapter):
         self.image_dir = os.path.join(data_root, image_dir)
         self.ann_path = os.path.join(data_root, ann_file)
         self.resize_scale = resize_scale
+        self.noise_mean = noise_mean
+        self.noise_sigma = noise_sigma
+        self.noise_seed = noise_seed
+        self.contrast_factor = contrast_factor
+        self.blur_kernel_size = blur_kernel_size
+        self.blur_sigma = blur_sigma
+        self.smooth_kernel_size = smooth_kernel_size
         
         # Load CrowdPose annotations (COCO format compatible)
         print(f"Cargando anotaciones desde {self.ann_path}...")
@@ -281,6 +388,17 @@ class CrowdPoseLoader(PoseDatasetAdapter):
                 keypoints,
                 self.resize_scale,
             )
+            img_array = _apply_image_quality_augmentations(
+                img_array,
+                image_id=img_id,
+                noise_mean=self.noise_mean,
+                noise_sigma=self.noise_sigma,
+                noise_seed=self.noise_seed,
+                contrast_factor=self.contrast_factor,
+                blur_kernel_size=self.blur_kernel_size,
+                blur_sigma=self.blur_sigma,
+                smooth_kernel_size=self.smooth_kernel_size,
+            )
 
             yield ImageSample(
                 image_id=img_id,
@@ -292,7 +410,20 @@ class CrowdPoseLoader(PoseDatasetAdapter):
             )
 
 class OCHumanLoader(PoseDatasetAdapter):
-    def __init__(self, data_root: str, ann_file: str, image_dir: str, resize_scale: float = 1.0):
+    def __init__(
+        self,
+        data_root: str,
+        ann_file: str,
+        image_dir: str,
+        resize_scale: float = 1.0,
+        noise_mean: float = 0.0,
+        noise_sigma: float = 0.0,
+        noise_seed: Optional[int] = None,
+        contrast_factor: float = 1.0,
+        blur_kernel_size: Optional[int] = 0,
+        blur_sigma: float = 0.0,
+        smooth_kernel_size: Optional[int] = 0,
+    ):
         """
         Loader for OCHuman dataset.
         
@@ -305,6 +436,13 @@ class OCHumanLoader(PoseDatasetAdapter):
         self.image_dir = os.path.join(data_root, image_dir)
         self.ann_path = os.path.join(data_root, ann_file)
         self.resize_scale = resize_scale
+        self.noise_mean = noise_mean
+        self.noise_sigma = noise_sigma
+        self.noise_seed = noise_seed
+        self.contrast_factor = contrast_factor
+        self.blur_kernel_size = blur_kernel_size
+        self.blur_sigma = blur_sigma
+        self.smooth_kernel_size = smooth_kernel_size
         
         # Load OCHuman annotations (COCO format compatible)
         print(f"Cargando anotaciones desde {self.ann_path}...")
@@ -398,6 +536,17 @@ class OCHumanLoader(PoseDatasetAdapter):
                 tuple(bbox),
                 keypoints,
                 self.resize_scale,
+            )
+            img_array = _apply_image_quality_augmentations(
+                img_array,
+                image_id=img_id,
+                noise_mean=self.noise_mean,
+                noise_sigma=self.noise_sigma,
+                noise_seed=self.noise_seed,
+                contrast_factor=self.contrast_factor,
+                blur_kernel_size=self.blur_kernel_size,
+                blur_sigma=self.blur_sigma,
+                smooth_kernel_size=self.smooth_kernel_size,
             )
 
             yield ImageSample(
