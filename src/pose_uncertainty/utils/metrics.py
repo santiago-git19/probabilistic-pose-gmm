@@ -166,6 +166,73 @@ def compute_oks(
     return float(oks), per_keypoint_oks
 
 
+def check_limb_swaps(
+    pred_coords: npt.NDArray[np.float32],
+    gt_coords: npt.NDArray[np.float32],
+    visible_flags: npt.NDArray[np.int32],
+    area: float,
+    sigmas: Optional[npt.NDArray[np.float32]] = None,
+    flip_pairs: Optional[List[Tuple[int, int]]] = None
+) -> npt.NDArray[np.bool_]:
+    """
+    Check which symmetric pairs suffer from a limb swap.
+    
+    A limb swap occurs if a predicted keypoint is a better match (in terms of OKS)
+    for the contralateral (opposite) ground truth keypoint than for the ipsilateral 
+    (correct) ground truth keypoint, AND the swapped OKS is reasonably high (>0.3)
+    to avoid counting random noise.
+    
+    Args:
+        pred_coords: Array of shape (num_keypoints, 2).
+        gt_coords: Array of shape (num_keypoints, 2).
+        visible_flags: Array of shape (num_keypoints,).
+        area: Bounding box area for scale normalization.
+        sigmas: Per-keypoint standard deviations. Defaults to COCO_SIGMAS.
+        flip_pairs: List of symmetric keypoint pairs.
+        
+    Returns:
+        Boolean array of shape (len(flip_pairs),) where True means the pair is swapped.
+    """
+    if sigmas is None:
+        sigmas = COCO_SIGMAS
+    
+    if flip_pairs is None:
+        # Avoid circular imports
+        from ..models.base import COCO_FLIP_PAIRS
+        flip_pairs = COCO_FLIP_PAIRS
+        
+    swaps = np.zeros(len(flip_pairs), dtype=bool)
+    scale_sq = area
+    if scale_sq <= 0:
+        return swaps
+        
+    for i, (l, r) in enumerate(flip_pairs):
+        # Only evaluate if BOTH keypoints are visible in ground truth
+        if visible_flags[l] > 0 and visible_flags[r] > 0:
+            def single_kp_oks(p_idx: int, gt_idx: int, k_idx: int) -> float:
+                d_sq = float(np.sum((pred_coords[p_idx] - gt_coords[gt_idx])**2))
+                variance = 2 * scale_sq * (sigmas[k_idx]**2)
+                return np.exp(-d_sq / variance)
+            
+            # Normal assignment
+            oks_l_l = single_kp_oks(l, l, l)
+            oks_r_r = single_kp_oks(r, r, r)
+            
+            # Swapped assignment
+            oks_l_r = single_kp_oks(l, r, r)
+            oks_r_l = single_kp_oks(r, l, l)
+            
+            # A keypoint is swapped if it's much better assigned to the other side
+            is_l_swapped = (oks_l_r > oks_l_l) and (oks_l_r > 0.3)
+            is_r_swapped = (oks_r_l > oks_r_r) and (oks_r_l > 0.3)
+            
+            # If at least one limb of the pair is swapped, count it as a swapped pair
+            if is_l_swapped or is_r_swapped:
+                swaps[i] = True
+                
+    return swaps
+
+
 def compute_nll(
     gmm_model: Any,
     gt_coords: npt.NDArray[np.float32]

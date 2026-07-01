@@ -381,6 +381,8 @@ class RobustGaussianMixture:
         
         return gaussian_resp, uniform_resp
     
+
+    
     def _m_step(
         self,
         samples: npt.NDArray[np.float64],
@@ -436,6 +438,55 @@ class RobustGaussianMixture:
         # Normalize weights
         self._normalize_weights()
     
+    '''
+    def _m_step(
+        self,
+        samples: npt.NDArray[np.float64],
+        responsibilities: npt.NDArray[np.float64],
+        uniform_resp: npt.NDArray[np.float64]
+    ) -> None:
+        """
+        M-step vectorizado que mantiene la compatibilidad con la lista self.components_.
+        """
+        n_samples, d = samples.shape
+        
+        # 1. Calcular N_k (peso total de cada componente)
+        n_k = responsibilities.sum(axis=0)
+        
+        # Máscara para evitar divisiones por cero en componentes muertos
+        active_mask = n_k > 1e-10
+        n_k_safe = np.where(active_mask, n_k, 1.0)
+        
+        # 2. Actualizar Medias: (K, N) @ (N, D) -> (K, D)
+        new_means = (responsibilities.T @ samples) / n_k_safe[:, np.newaxis]
+        
+        # 3. Actualizar Covarianzas
+        # diff: (N, K, D)
+        diff = samples[:, np.newaxis, :] - new_means[np.newaxis, :, :]
+        
+        # einsum calcula las matrices de covarianza de todos los componentes simultáneamente
+        new_covs = np.einsum('nk,nki,nkj->kij', responsibilities, diff, diff)
+        new_covs = new_covs / n_k_safe[:, np.newaxis, np.newaxis]
+        
+        # Regularización vectorizada
+        new_covs += self.reg_covar * np.eye(d)
+        
+        # 4. VOLCAR LOS RESULTADOS A LOS OBJETOS ORIGINALES (Compatibilidad)
+        for k, comp in enumerate(self.components_):
+            if active_mask[k]:
+                comp.mean = new_means[k].astype(np.float32)
+                comp.covariance = new_covs[k].astype(np.float32)
+            
+            # El peso se actualiza siempre (caerá a 0 si el componente está muerto)
+            comp.weight = float(n_k[k] / n_samples)
+            comp.n_samples = int(n_k[k])
+        
+        # 5. Actualizar el peso del componente uniforme
+        self.uniform_weight_ = float(uniform_resp.sum() / n_samples)
+        
+        # 6. Normalizar para garantizar que todo sume exactamente 1.0
+        self._normalize_weights()
+    '''
     def _check_dead_components(self, responsibilities: npt.NDArray[np.float64]) -> None:
         """Check for and handle dead components (π_k → 0)."""
         for k, comp in enumerate(self.components_):
@@ -586,6 +637,31 @@ class RobustGaussianMixture:
         """
         gaussian_resp, uniform_resp = self._e_step(samples)
         return np.column_stack([gaussian_resp, uniform_resp])
+
+    def score_samples(self, samples: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+        """
+        Compute the log-likelihood of each sample under the model.
+        
+        Args:
+            samples: Array of shape (N, 2).
+            
+        Returns:
+            Array of shape (N,) with log probabilities.
+        """
+        n_samples = len(samples)
+        probs = np.zeros(n_samples)
+        for comp in self.components_:
+            try:
+                pdf_values = self._gaussian_pdf(samples, comp.mean, comp.covariance)
+                probs += comp.weight * pdf_values
+            except Exception:
+                pass
+        
+        if hasattr(self, '_uniform_density'):
+            probs += self.uniform_weight_ * self._uniform_density
+            
+        probs = np.maximum(probs, 1e-300)
+        return np.log(probs)
 
 
 def select_best_model(

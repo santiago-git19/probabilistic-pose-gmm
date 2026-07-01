@@ -93,13 +93,26 @@ def main(cfg: DictConfig) -> None:
 
         # --- wandb: log métricas escalares agregadas ----------------------
         if df is not None and not df.empty:
+            oks_base_mean = float(df["oks_base"].mean()) if "oks_base" in df.columns else 0.0
+            delta_oks_mean = float(df["delta_oks"].mean()) if "delta_oks" in df.columns else 0.0
+            
+            swaps_base_total = int(df["swaps_base"].sum()) if "swaps_base" in df.columns else 0
+            swaps_ours_total = int(df["swaps_ours"].sum()) if "swaps_ours" in df.columns else 0
+            swaps_corrected = int(df["swaps_corrected"].sum()) if "swaps_corrected" in df.columns else 0
+            swaps_introduced = int(df["swaps_introduced"].sum()) if "swaps_introduced" in df.columns else 0
+                
             log_metrics({
                 "oks_ours_mean": float(df["oks_ours"].mean()) if "oks_ours" in df.columns else 0.0,
-                "oks_base_mean": float(df["oks_base"].mean()) if "oks_base" in df.columns else 0.0,
-                "delta_oks_mean": float(df["delta_oks"].mean()) if "delta_oks" in df.columns else 0.0,
+                "oks_base_mean": oks_base_mean,
+                "delta_oks_mean": delta_oks_mean,
+                "delta_oks_proportional": delta_oks_mean / oks_base_mean if oks_base_mean > 0 else 0.0,
                 "nll_mean": float(df["nll"].mean()) if "nll" in df.columns else 0.0,
                 "entropy_mean": float(df["entropy"].mean()) if "entropy" in df.columns else 0.0,
                 "covariance_vol_mean": float(df["covariance_vol"].mean()) if "covariance_vol" in df.columns else 0.0,
+                "swaps_base_total": swaps_base_total,
+                "swaps_ours_total": swaps_ours_total,
+                "swaps_corrected": swaps_corrected,
+                "swaps_introduced": swaps_introduced,
                 "n_images": len(df),
             })
         

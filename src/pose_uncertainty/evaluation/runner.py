@@ -55,6 +55,7 @@ from ..utils.metrics import (
     compute_entropy,
     compute_covariance_volume,
     count_active_components,
+    check_limb_swaps,
 )
 from ..utils.types import ImageSample, MixtureResult
 from ..data_loader import COCOLoader, CrowdPoseLoader, OCHumanLoader
@@ -96,6 +97,13 @@ def _build_dataloader(cfg: DictConfig) -> Any:
         ann_file=ds_cfg.annotations,
         image_dir=ds_cfg.images,
         resize_scale=OmegaConf.select(cfg, "dataset.resize_scale", default=1.0),
+        noise_mean=OmegaConf.select(cfg, "dataset.noise_mean", default=0.0),
+        noise_sigma=OmegaConf.select(cfg, "dataset.noise_sigma", default=0.0),
+        noise_seed=OmegaConf.select(cfg, "dataset.noise_seed", default=None),
+        contrast_factor=OmegaConf.select(cfg, "dataset.contrast_factor", default=1.0),
+        blur_kernel_size=OmegaConf.select(cfg, "dataset.blur_kernel_size", default=0),
+        blur_sigma=OmegaConf.select(cfg, "dataset.blur_sigma", default=0.0),
+        smooth_kernel_size=OmegaConf.select(cfg, "dataset.smooth_kernel_size", default=0),
     )
 
 
@@ -464,6 +472,15 @@ class EvaluationRunner:
 
         # 4) Scalar metrics ------------------------------------------------
         oks_ours, per_kp_oks_ours = compute_oks(ours_coords[:, :2], gt_coords, vis, area)
+        
+        swaps_base_arr = check_limb_swaps(base_coords_2d, gt_coords, vis, area)
+        swaps_ours_arr = check_limb_swaps(ours_coords[:, :2], gt_coords, vis, area)
+        
+        swaps_base = int(np.sum(swaps_base_arr))
+        swaps_ours = int(np.sum(swaps_ours_arr))
+        swaps_corrected = int(np.sum(swaps_base_arr & ~swaps_ours_arr))
+        swaps_introduced = int(np.sum(~swaps_base_arr & swaps_ours_arr))
+        
         delta_oks = oks_ours - oks_base
         
         # Per-keypoint delta OKS
@@ -504,8 +521,20 @@ class EvaluationRunner:
                     proxy = RobustGaussianMixture(n_components=len(mr.components))
                     proxy.components_ = mr.components
                     proxy.uniform_weight_ = mr.uniform_weight
+                    
+                    # Set _uniform_density to prevent AttributeError in score_samples
+                    # Use heatmap dimensions for density
+                    proxy._uniform_density = 1.0 / (heatmap_avg.shape[1] * heatmap_avg.shape[2])
+                    
                     gt_pt = gt_coords[k].reshape(1, 2)
-                    nll_val += compute_nll(proxy, gt_pt)
+                    
+                    # Transform GT coords to heatmap space since GMM is in heatmap space
+                    if metadata_ref is not None and 'ref_hm' in locals():
+                        gt_pt_hm = MMPoseAdapter.transform_image_coords_to_heatmap(gt_pt, ref_hm)
+                    else:
+                        gt_pt_hm = gt_pt
+
+                    nll_val += compute_nll(proxy, gt_pt_hm)
                 except Exception:
                     pass
         nll_val = nll_val / max(len(gmm_results), 1)
@@ -517,6 +546,10 @@ class EvaluationRunner:
             "oks_base": float(oks_base),
             "oks_ours": float(oks_ours),
             "delta_oks": float(delta_oks),
+            "swaps_base": swaps_base,
+            "swaps_ours": swaps_ours,
+            "swaps_corrected": swaps_corrected,
+            "swaps_introduced": swaps_introduced,
             "nll": float(nll_val),
             "entropy": float(entropy_val),
             "covariance_vol": float(cov_vol),
@@ -777,6 +810,15 @@ class EvaluationRunner:
                 logger.debug("Coord transform failed; raw heatmap coords used")
 
         oks_ours, per_kp_oks_ours = compute_oks(ours_coords[:, :2], gt_coords, vis, area)
+        
+        swaps_base_arr = check_limb_swaps(base_coords_2d, gt_coords, vis, area)
+        swaps_ours_arr = check_limb_swaps(ours_coords[:, :2], gt_coords, vis, area)
+        
+        swaps_base = int(np.sum(swaps_base_arr))
+        swaps_ours = int(np.sum(swaps_ours_arr))
+        swaps_corrected = int(np.sum(swaps_base_arr & ~swaps_ours_arr))
+        swaps_introduced = int(np.sum(~swaps_base_arr & swaps_ours_arr))
+        
         ours_score_mean = float(np.mean(ours_scores))
 
         # Aggregate GMM info -----------------------------------------------
@@ -815,7 +857,19 @@ class EvaluationRunner:
                     proxy = RobustGaussianMixture(n_components=len(mr.components))
                     proxy.components_ = mr.components
                     proxy.uniform_weight_ = mr.uniform_weight
-                    nll_val += compute_nll(proxy, gt_coords[k].reshape(1, 2))
+                    
+                    # Set _uniform_density to prevent AttributeError in score_samples
+                    proxy._uniform_density = 1.0 / (heatmap_avg.shape[1] * heatmap_avg.shape[2])
+                    
+                    gt_pt = gt_coords[k].reshape(1, 2)
+                    
+                    # Transform GT coords to heatmap space
+                    if metadata_ref is not None and 'ref_hm' in locals():
+                        gt_pt_hm = MMPoseAdapter.transform_image_coords_to_heatmap(gt_pt, ref_hm)
+                    else:
+                        gt_pt_hm = gt_pt
+                        
+                    nll_val += compute_nll(proxy, gt_pt_hm)
                 except Exception:
                     pass
         nll_val /= max(len(gmm_results), 1)
@@ -874,6 +928,10 @@ class EvaluationRunner:
                 "oks_base": float(oks_base),
                 "oks_ours": float(oks_ours),
                 "delta_oks": float(delta_oks),
+                "swaps_base": swaps_base,
+                "swaps_ours": swaps_ours,
+                "swaps_corrected": swaps_corrected,
+                "swaps_introduced": swaps_introduced,
                 "nll": float(nll_val),
                 "entropy": float(entropy_val),
                 "covariance_volume": float(cov_vol),

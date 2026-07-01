@@ -62,6 +62,7 @@ log = logging.getLogger(__name__)
 # ESTUDIO ABLATIVO TTA - Prueba cada componente por separado y combinado
 # =============================================================================
 
+'''
 EXPERIMENTS: Dict[str, Dict[str, Any]] = {
     # =========================================================================
     # BASELINE: Sin TTA
@@ -375,6 +376,47 @@ EXPERIMENTS: Dict[str, Dict[str, Any]] = {
         "photometric.blur.enabled": True,
     },
 }
+'''
+
+EXPERIMENTS: Dict[str, Dict[str, Any]] = {
+    # =========================================================================
+    # A) RUIDO GAUSSIANO BLANCO
+    # =========================================================================
+    "Noise_Sigma_25": {"dataset.noise_sigma": 25.0, "wandb_group": "degradation_noise"},
+    "Noise_Sigma_50": {"dataset.noise_sigma": 50.0, "wandb_group": "degradation_noise"},
+    "Noise_Sigma_75": {"dataset.noise_sigma": 75.0, "wandb_group": "degradation_noise"},
+    "Noise_Sigma_100": {"dataset.noise_sigma": 100.0, "wandb_group": "degradation_noise"},
+    "Noise_Sigma_200": {"dataset.noise_sigma": 200.0, "wandb_group": "degradation_noise"},
+    "Noise_Sigma_300": {"dataset.noise_sigma": 300.0, "wandb_group": "degradation_noise"},
+    "Noise_Sigma_400": {"dataset.noise_sigma": 400.0, "wandb_group": "degradation_noise"},
+
+    # =========================================================================
+    # B) REDUCCIÓN DE CONTRASTE
+    # =========================================================================
+    "Contrast_0.75": {"dataset.contrast_factor": 0.75, "wandb_group": "degradation_contrast"},
+    "Contrast_0.50": {"dataset.contrast_factor": 0.50, "wandb_group": "degradation_contrast"},
+    "Contrast_0.25": {"dataset.contrast_factor": 0.25, "wandb_group": "degradation_contrast"},
+    "Contrast_0.10": {"dataset.contrast_factor": 0.10, "wandb_group": "degradation_contrast"},
+    "Contrast_0.05": {"dataset.contrast_factor": 0.05, "wandb_group": "degradation_contrast"},
+
+    # =========================================================================
+    # C) GAUSSIAN BLUR (Emborronamiento)
+    # =========================================================================
+    "Blur_Kernel_21": {"dataset.blur_kernel_size": 21, "wandb_group": "degradation_blur"},
+    "Blur_Kernel_31": {"dataset.blur_kernel_size": 31, "wandb_group": "degradation_blur"},
+    "Blur_Kernel_41": {"dataset.blur_kernel_size": 41, "wandb_group": "degradation_blur"},
+    "Blur_Kernel_51": {"dataset.blur_kernel_size": 51, "wandb_group": "degradation_blur"},
+    "Blur_Kernel_61": {"dataset.blur_kernel_size": 61, "wandb_group": "degradation_blur"},
+    "Blur_Kernel_71": {"dataset.blur_kernel_size": 71, "wandb_group": "degradation_blur"},
+
+    # =========================================================================
+    # D) SMOOTH / LOW PASS FILTER (Suavizado)
+    # =========================================================================
+    "Smooth_Kernel_10": {"dataset.smooth_kernel_size": 10, "wandb_group": "degradation_smooth"},
+    "Smooth_Kernel_20": {"dataset.smooth_kernel_size": 20, "wandb_group": "degradation_smooth"},
+    "Smooth_Kernel_30": {"dataset.smooth_kernel_size": 30, "wandb_group": "degradation_smooth"},
+    "Smooth_Kernel_40": {"dataset.smooth_kernel_size": 40, "wandb_group": "degradation_smooth"},
+}
 
 # =============================================================================
 # ████  FIN DEFINICIÓN DE EXPERIMENTOS  ████
@@ -443,6 +485,11 @@ def _extract_scalar_metrics(
     oks_ours = _safe_mean("oks_ours")
     oks_base = _safe_mean("oks_base")
 
+    swaps_base_total = int(df["swaps_base"].sum()) if "swaps_base" in df.columns else 0
+    swaps_ours_total = int(df["swaps_ours"].sum()) if "swaps_ours" in df.columns else 0
+    swaps_corrected = int(df["swaps_corrected"].sum()) if "swaps_corrected" in df.columns else 0
+    swaps_introduced = int(df["swaps_introduced"].sum()) if "swaps_introduced" in df.columns else 0
+
     return {
         "experiment": experiment_name,
         "overrides": json.dumps(overrides, default=str),
@@ -454,6 +501,10 @@ def _extract_scalar_metrics(
         "entropy_mean": _safe_mean("entropy"),
         "covariance_vol_mean": _safe_mean("covariance_vol"),
         "n_components_mean": _safe_mean("n_components"),
+        "swaps_base_total": swaps_base_total,
+        "swaps_ours_total": swaps_ours_total,
+        "swaps_corrected": swaps_corrected,
+        "swaps_introduced": swaps_introduced,
     }
 
 
@@ -486,8 +537,8 @@ def main(cfg: DictConfig) -> None:
     # ------------------------------------------------------------------
     # 1) Recurso compartido: DataLoader  (una sola instancia)
     # ------------------------------------------------------------------
-    log.info("[SETUP] Cargando dataset (compartido entre experimentos)...")
-    dataloader = _build_dataloader(cfg)
+    #log.info("[SETUP] Cargando dataset (compartido entre experimentos)...")
+    #dataloader = _build_dataloader(cfg)
 
     # Debug limit (idéntico al que soporta run_benchmark.py)
     debug_limit: Optional[int] = OmegaConf.select(
@@ -533,22 +584,31 @@ def main(cfg: DictConfig) -> None:
         with open_dict(current_cfg):
             OmegaConf.update(current_cfg, "logging.output_dir", str(exp_output))
 
+        # ---- Extraer grupo W&B y limpiar overrides --------------------
+        # Sacamos 'wandb_group' para no inyectarlo en la config de Hydra
+        clean_overrides = overrides.copy()
+        run_group = clean_overrides.pop("wandb_group", "compare_experiments")
+
         # ---- Aplicar overrides exclusivos de este experimento ---------
-        apply_overrides(current_cfg, overrides)
+        apply_overrides(current_cfg, clean_overrides)
 
         # ---- Ejecutar evaluación --------------------------------------
         t0 = time.perf_counter()
+
+        # ---- Crear dataloader fresco con los parámetros fotométricos actuales
+        log.info("  -> Instanciando DataLoader para %s...", exp_name)
+        current_dataloader = _build_dataloader(current_cfg)
 
         # --- wandb: un run por experimento (try/finally garantiza finish) --
         with wandb_run(
             current_cfg,
             name=exp_name,
-            tags=["comparison", cfg.dataset.name, base_model_name],
-            group="compare_experiments",
+            tags=["degradation", cfg.dataset.name, base_model_name],
+            group=run_group,  # <- Aquí usamos el grupo dinámico
             job_type="evaluation",
         ):
             try:
-                runner = EvaluationRunner(current_cfg, dataloader=dataloader)
+                runner = EvaluationRunner(current_cfg, dataloader=current_dataloader)
 
                 # Reutilizar modelo si la config de modelo no ha cambiado
                 exp_model_name: str = OmegaConf.select(
@@ -561,7 +621,7 @@ def main(cfg: DictConfig) -> None:
                 # Debug limit: envolver dataloader con islice
                 if debug_limit is not None:
                     import itertools
-                    runner.dataloader = itertools.islice(dataloader, debug_limit)
+                    runner.dataloader = itertools.islice(current_dataloader, debug_limit)
 
                 # Solo mass evaluation (Stage 1)
                 df = runner.run_mass_evaluation()
@@ -579,10 +639,15 @@ def main(cfg: DictConfig) -> None:
                         "oks_ours_mean": metrics["oks_ours_mean"],
                         "oks_base_mean": metrics["oks_base_mean"],
                         "delta_oks_mean": metrics["delta_oks_mean"],
+                        "delta_oks_proportional": metrics["delta_oks_mean"] / metrics["oks_base_mean"] if metrics["oks_base_mean"] > 0 else 0.0,
                         "nll_mean": metrics["nll_mean"],
                         "entropy_mean": metrics["entropy_mean"],
                         "covariance_vol_mean": metrics["covariance_vol_mean"],
                         "n_components_mean": metrics["n_components_mean"],
+                        "swaps_base_total": metrics["swaps_base_total"],
+                        "swaps_ours_total": metrics["swaps_ours_total"],
+                        "swaps_corrected": metrics["swaps_corrected"],
+                        "swaps_introduced": metrics["swaps_introduced"],
                         "n_images": metrics["n_images"],
                         "elapsed_s": metrics["elapsed_s"],
                     })
