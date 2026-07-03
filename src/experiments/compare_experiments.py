@@ -377,7 +377,7 @@ EXPERIMENTS: Dict[str, Dict[str, Any]] = {
     },
 }
 '''
-
+'''
 EXPERIMENTS: Dict[str, Dict[str, Any]] = {
     # =========================================================================
     # A) RUIDO GAUSSIANO BLANCO
@@ -417,6 +417,15 @@ EXPERIMENTS: Dict[str, Dict[str, Any]] = {
     "Smooth_Kernel_30": {"dataset.smooth_kernel_size": 30, "wandb_group": "degradation_smooth"},
     "Smooth_Kernel_40": {"dataset.smooth_kernel_size": 40, "wandb_group": "degradation_smooth"},
 }
+'''
+
+EXPERIMENTS: Dict[str, Dict[str, Any]] = {
+    "Noise_resolution_0_5": {"dataset.resize_scale": 0.5, "wandb_group": "AIC_0.7_BIC_0.3_degradation_resolution"},
+    "Noise_resolution_0_25": {"dataset.resize_scale": 0.25, "wandb_group": "AIC_0.7_BIC_0.3_degradation_resolution"},
+    "Noise_resolution_0_125": {"dataset.resize_scale": 0.125, "wandb_group": "AIC_0.7_BIC_0.3_degradation_resolution"},
+    "Noise_resolution_0_0625": {"dataset.resize_scale": 0.0625, "wandb_group": "AIC_0.7_BIC_0.3_degradation_resolution"},
+}
+
 
 # =============================================================================
 # ████  FIN DEFINICIÓN DE EXPERIMENTOS  ████
@@ -484,11 +493,15 @@ def _extract_scalar_metrics(
 
     oks_ours = _safe_mean("oks_ours")
     oks_base = _safe_mean("oks_base")
+    oks_tta = _safe_mean("oks_tta")
 
     swaps_base_total = int(df["swaps_base"].sum()) if "swaps_base" in df.columns else 0
     swaps_ours_total = int(df["swaps_ours"].sum()) if "swaps_ours" in df.columns else 0
+    swaps_tta_total = int(df["swaps_tta"].sum()) if "swaps_tta" in df.columns else 0
     swaps_corrected = int(df["swaps_corrected"].sum()) if "swaps_corrected" in df.columns else 0
     swaps_introduced = int(df["swaps_introduced"].sum()) if "swaps_introduced" in df.columns else 0
+    swaps_corrected_tta = int(df["swaps_corrected_tta"].sum()) if "swaps_corrected_tta" in df.columns else 0
+    swaps_introduced_tta = int(df["swaps_introduced_tta"].sum()) if "swaps_introduced_tta" in df.columns else 0
 
     return {
         "experiment": experiment_name,
@@ -496,15 +509,21 @@ def _extract_scalar_metrics(
         "n_images": len(df),
         "oks_ours_mean": oks_ours,
         "oks_base_mean": oks_base,
+        "oks_tta_mean": oks_tta,
         "delta_oks_mean": oks_ours - oks_base if not (np.isnan(oks_ours) or np.isnan(oks_base)) else float("nan"),
+        "delta_oks_tta_mean": oks_tta - oks_base if not (np.isnan(oks_tta) or np.isnan(oks_base)) else float("nan"),
+        "delta_oks_ours_over_tta_mean": oks_ours - oks_tta if not (np.isnan(oks_ours) or np.isnan(oks_tta)) else float("nan"),
         "nll_mean": _safe_mean("nll"),
         "entropy_mean": _safe_mean("entropy"),
         "covariance_vol_mean": _safe_mean("covariance_vol"),
         "n_components_mean": _safe_mean("n_components"),
         "swaps_base_total": swaps_base_total,
         "swaps_ours_total": swaps_ours_total,
+        "swaps_tta_total": swaps_tta_total,
         "swaps_corrected": swaps_corrected,
         "swaps_introduced": swaps_introduced,
+        "swaps_corrected_tta": swaps_corrected_tta,
+        "swaps_introduced_tta": swaps_introduced_tta,
     }
 
 
@@ -638,16 +657,22 @@ def main(cfg: DictConfig) -> None:
                     log_metrics({
                         "oks_ours_mean": metrics["oks_ours_mean"],
                         "oks_base_mean": metrics["oks_base_mean"],
+                        "oks_tta_mean": metrics["oks_tta_mean"],
                         "delta_oks_mean": metrics["delta_oks_mean"],
+                        "delta_oks_tta_mean": metrics["delta_oks_tta_mean"],
+                        "delta_oks_ours_over_tta_mean": metrics["delta_oks_ours_over_tta_mean"],
                         "delta_oks_proportional": metrics["delta_oks_mean"] / metrics["oks_base_mean"] if metrics["oks_base_mean"] > 0 else 0.0,
                         "nll_mean": metrics["nll_mean"],
                         "entropy_mean": metrics["entropy_mean"],
                         "covariance_vol_mean": metrics["covariance_vol_mean"],
                         "n_components_mean": metrics["n_components_mean"],
                         "swaps_base_total": metrics["swaps_base_total"],
+                        "swaps_tta_total": metrics["swaps_tta_total"],
                         "swaps_ours_total": metrics["swaps_ours_total"],
                         "swaps_corrected": metrics["swaps_corrected"],
                         "swaps_introduced": metrics["swaps_introduced"],
+                        "swaps_corrected_tta": metrics["swaps_corrected_tta"],
+                        "swaps_introduced_tta": metrics["swaps_introduced_tta"],
                         "n_images": metrics["n_images"],
                         "elapsed_s": metrics["elapsed_s"],
                     })

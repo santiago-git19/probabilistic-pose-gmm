@@ -470,18 +470,50 @@ class EvaluationRunner:
             except Exception:
                 logger.debug("Coord transform failed; using raw heatmap coords")
 
+            # TTA-only: use the model's official decoder on the averaged heatmap.
+            # This replicates exactly what the model does internally (including
+            # sub-pixel refinement / quarter-pixel offset from the MSRA/UDP codec),
+            # making the comparison fair against TTA+GMM.
+            try:
+                tta_coords, _ = self.model.decode_heatmaps(ref_hm)
+            except Exception:
+                logger.debug("decode_heatmaps failed for TTA; falling back to argmax+transform")
+                tta_coords = np.zeros((num_kp, 2), dtype=np.float32)
+                for k in range(num_kp):
+                    hm_k = heatmap_avg[k]
+                    y, x = np.unravel_index(np.argmax(hm_k), hm_k.shape)
+                    tta_coords[k] = [float(x), float(y)]
+                try:
+                    tta_coords = MMPoseAdapter.transform_heatmap_coords_to_image(tta_coords, ref_hm)
+                except Exception:
+                    pass
+        else:
+            # No metadata: best-effort argmax in heatmap space (no transform possible)
+            tta_coords = np.zeros((num_kp, 2), dtype=np.float32)
+            for k in range(num_kp):
+                hm_k = heatmap_avg[k]
+                y, x = np.unravel_index(np.argmax(hm_k), hm_k.shape)
+                tta_coords[k] = [float(x), float(y)]
+
         # 4) Scalar metrics ------------------------------------------------
         oks_ours, per_kp_oks_ours = compute_oks(ours_coords[:, :2], gt_coords, vis, area)
+        oks_tta, per_kp_oks_tta = compute_oks(tta_coords[:, :2], gt_coords, vis, area)
         
         swaps_base_arr = check_limb_swaps(base_coords_2d, gt_coords, vis, area)
         swaps_ours_arr = check_limb_swaps(ours_coords[:, :2], gt_coords, vis, area)
+        swaps_tta_arr = check_limb_swaps(tta_coords[:, :2], gt_coords, vis, area)
         
         swaps_base = int(np.sum(swaps_base_arr))
         swaps_ours = int(np.sum(swaps_ours_arr))
+        swaps_tta = int(np.sum(swaps_tta_arr))
         swaps_corrected = int(np.sum(swaps_base_arr & ~swaps_ours_arr))
         swaps_introduced = int(np.sum(~swaps_base_arr & swaps_ours_arr))
+        swaps_corrected_tta = int(np.sum(swaps_base_arr & ~swaps_tta_arr))
+        swaps_introduced_tta = int(np.sum(~swaps_base_arr & swaps_tta_arr))
         
         delta_oks = oks_ours - oks_base
+        delta_oks_tta = oks_tta - oks_base
+        delta_oks_ours_over_tta = oks_ours - oks_tta
         
         # Per-keypoint delta OKS
         per_kp_delta_oks = per_kp_oks_ours - per_kp_oks_base
@@ -544,12 +576,18 @@ class EvaluationRunner:
             "image_id": sample.image_id,
             "dataset": sample.dataset_source,
             "oks_base": float(oks_base),
+            "oks_tta": float(oks_tta),
             "oks_ours": float(oks_ours),
             "delta_oks": float(delta_oks),
+            "delta_oks_tta": float(delta_oks_tta),
+            "delta_oks_ours_over_tta": float(delta_oks_ours_over_tta),
             "swaps_base": swaps_base,
+            "swaps_tta": swaps_tta,
             "swaps_ours": swaps_ours,
             "swaps_corrected": swaps_corrected,
             "swaps_introduced": swaps_introduced,
+            "swaps_corrected_tta": swaps_corrected_tta,
+            "swaps_introduced_tta": swaps_introduced_tta,
             "nll": float(nll_val),
             "entropy": float(entropy_val),
             "covariance_vol": float(cov_vol),
