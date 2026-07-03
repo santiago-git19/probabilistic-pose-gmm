@@ -172,7 +172,7 @@ def check_limb_swaps(
     visible_flags: npt.NDArray[np.int32],
     area: float,
     sigmas: Optional[npt.NDArray[np.float32]] = None,
-    flip_pairs: Optional[List[Tuple[int, int]]] = None
+    flip_pairs: Optional[List[tuple[int, int]]] = None
 ) -> npt.NDArray[np.bool_]:
     """
     Check which symmetric pairs suffer from a limb swap.
