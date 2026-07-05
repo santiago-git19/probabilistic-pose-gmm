@@ -64,6 +64,9 @@ math_core:
     outer_loop_iterations: ${outer_loop_iterations}
     bootstrap_sample_size: ${bootstrap_sample_size}
     initial_uniform_weight: ${initial_uniform_weight}
+    decode_strategy: ${decode_strategy}
+    variance_filter_threshold: ${variance_filter_threshold}
+    mrf: ${mrf}
   
   # Monte Carlo Sampling parameters
   sampling: ${sampling}

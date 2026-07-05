@@ -607,19 +607,71 @@ class RobustGaussianMixture:
         n_params = self.n_components * 6
         return n_params * np.log(n_samples) - 2 * self.log_likelihood_
     
-    def get_mode(self) -> Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]:
+    def get_mode(
+        self,
+        strategy: str = "argmax",
+        variance_threshold: float = 3.0,
+    ) -> Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]:
         """
-        Extract the dominant mode (component with highest mixing weight).
+        Extract the dominant mode from the fitted mixture.
+        
+        Args:
+            strategy: Decode strategy for selecting the dominant component.
+                - ``"argmax"``: Pick the component with highest mixing weight πₖ
+                  (original behaviour).
+                - ``"variance_filter"``: When K=2, compare det(Σ₁)/det(Σ₂). If
+                  the ratio exceeds *variance_threshold*, pick the more compact
+                  component regardless of πₖ.  Falls back to argmax when K=1 or
+                  when the ratio is below the threshold.
+            variance_threshold: Ratio of det(Σ) above which the dispersed
+                component is considered noise/outlier (only used when
+                strategy="variance_filter").  Default 3.0.
         
         Returns:
-            Tuple of (mean, covariance) for the dominant component.
+            Tuple of (mean, covariance) for the selected component.
         """
         if not self.components_:
             raise ValueError("Model not fitted yet. Call fit() first.")
         
-        best_idx = np.argmax([c.weight for c in self.components_])
-        best_comp = self.components_[best_idx]
+        if strategy == "variance_filter" and len(self.components_) == 2:
+            det_0 = np.linalg.det(self.components_[0].covariance)
+            det_1 = np.linalg.det(self.components_[1].covariance)
+            
+            # Avoid division by zero
+            det_0 = max(det_0, 1e-30)
+            det_1 = max(det_1, 1e-30)
+            
+            ratio = det_0 / det_1
+            
+            if ratio > variance_threshold:
+                # Component 0 is much more dispersed → pick component 1
+                best_idx = 1
+                logger.debug(
+                    "variance_filter: comp0 det=%.4e >> comp1 det=%.4e "
+                    "(ratio=%.2f > %.2f) → picking comp1",
+                    det_0, det_1, ratio, variance_threshold,
+                )
+            elif (1.0 / ratio) > variance_threshold:
+                # Component 1 is much more dispersed → pick component 0
+                best_idx = 0
+                logger.debug(
+                    "variance_filter: comp1 det=%.4e >> comp0 det=%.4e "
+                    "(ratio=%.2f > %.2f) → picking comp0",
+                    det_1, det_0, 1.0 / ratio, variance_threshold,
+                )
+            else:
+                # Both components have similar compactness → fall back to argmax
+                best_idx = int(np.argmax([c.weight for c in self.components_]))
+                logger.debug(
+                    "variance_filter: similar compactness (ratio=%.2f) "
+                    "→ fallback to argmax(πₖ) → comp%d",
+                    max(ratio, 1.0 / ratio), best_idx,
+                )
+        else:
+            # K=1 or strategy="argmax" → original behaviour
+            best_idx = int(np.argmax([c.weight for c in self.components_]))
         
+        best_comp = self.components_[best_idx]
         return best_comp.mean.astype(np.float64), best_comp.covariance.astype(np.float64)
     
     def predict_proba(
@@ -672,7 +724,9 @@ def select_best_model(
     max_iter: int = 100,
     tol: float = 1e-4,
     random_state: Optional[int] = None,
-    bounding_box: Optional[Tuple[float, float, float, float]] = None
+    bounding_box: Optional[Tuple[float, float, float, float]] = None,
+    decode_strategy: str = "argmax",
+    variance_threshold: float = 3.0,
 ) -> MixtureResult:
     """
     Select best model topology (unimodal vs bimodal) using AIC/BIC.
@@ -748,7 +802,9 @@ def select_best_model(
         raise RuntimeError("All model fits failed")
     
     # Extract results
-    best_mean, best_cov = best_model.get_mode()
+    best_mean, best_cov = best_model.get_mode(
+        strategy=decode_strategy, variance_threshold=variance_threshold
+    )
     
     return MixtureResult(
         model_type=best_type,
@@ -774,7 +830,9 @@ def fit_with_outer_loop(
     max_iter: int = 100,
     tol: float = 1e-4,
     random_state: Optional[int] = None,
-    bounding_box: Optional[Tuple[float, float, float, float]] = None
+    bounding_box: Optional[Tuple[float, float, float, float]] = None,
+    decode_strategy: str = "argmax",
+    variance_threshold: float = 3.0,
 ) -> MixtureResult:
     """
     Fit mixture model with outer loop for stability (re-sampling strategy).
@@ -825,7 +883,9 @@ def fit_with_outer_loop(
                 max_iter=max_iter,
                 tol=tol,
                 random_state=seed,
-                bounding_box=bounding_box
+                bounding_box=bounding_box,
+                decode_strategy=decode_strategy,
+                variance_threshold=variance_threshold,
             )
             
             winning_means.append(result.best_mean)

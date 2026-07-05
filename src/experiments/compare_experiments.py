@@ -420,10 +420,19 @@ EXPERIMENTS: Dict[str, Dict[str, Any]] = {
 '''
 
 EXPERIMENTS: Dict[str, Dict[str, Any]] = {
-    "Noise_resolution_0_5": {"dataset.resize_scale": 0.5, "wandb_group": "AIC_0.7_BIC_0.3_degradation_resolution"},
-    "Noise_resolution_0_25": {"dataset.resize_scale": 0.25, "wandb_group": "AIC_0.7_BIC_0.3_degradation_resolution"},
-    "Noise_resolution_0_125": {"dataset.resize_scale": 0.125, "wandb_group": "AIC_0.7_BIC_0.3_degradation_resolution"},
-    "Noise_resolution_0_0625": {"dataset.resize_scale": 0.0625, "wandb_group": "AIC_0.7_BIC_0.3_degradation_resolution"},
+    # =========================================================================
+    # MRF Graph Decoding Ablation (Propuesta C)
+    # Testing hyperparameters under a fixed resolution degradation (0.125)
+    # =========================================================================
+
+    # --- 1. Ablation on use_covariance_score ---
+    "MRF_CovScore_True": {"dataset.resize_scale": 0.125, "decode_strategy": "mrf_graph", "mrf.use_covariance_score": True, "wandb_group": "mrf_ablation_cov"},
+    "MRF_CovScore_False": {"dataset.resize_scale": 0.125, "decode_strategy": "mrf_graph", "mrf.use_covariance_score": False, "wandb_group": "mrf_ablation_cov"},
+
+    # --- 2. Ablation on bone_length_sigma ---
+    "MRF_Sigma_1.0": {"dataset.resize_scale": 0.125, "decode_strategy": "mrf_graph", "mrf.bone_length_sigma": 1.0, "wandb_group": "mrf_ablation_sigma"},
+    "MRF_Sigma_2.0": {"dataset.resize_scale": 0.125, "decode_strategy": "mrf_graph", "mrf.bone_length_sigma": 2.0, "wandb_group": "mrf_ablation_sigma"},
+    "MRF_Sigma_3.0": {"dataset.resize_scale": 0.125, "decode_strategy": "mrf_graph", "mrf.bone_length_sigma": 3.0, "wandb_group": "mrf_ablation_sigma"},
 }
 
 

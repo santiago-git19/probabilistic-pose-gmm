@@ -20,3 +20,20 @@ bootstrap_sample_size: 1000    # Samples per bootstrap iteration
 
 # Uniform Component (Outlier Handling)
 initial_uniform_weight: 0.2   # Initial weight for uniform component
+
+# Decode Strategy: how to extract the final coordinate from the GMM
+# 'argmax'          – pick component with highest pi_k (original behaviour)
+# 'variance_filter' – when K=2, pick the more compact component (lower det(Sigma))
+#                     if the covariance ratio exceeds variance_filter_threshold;
+#                     otherwise fall back to argmax.
+# 'mrf_graph'       – (Propuesta C) use Belief Propagation on the skeleton
+#                     graph to jointly resolve all keypoints, eliminating
+#                     limb swaps via anatomical bone-length constraints.
+#                     Only acts on bimodal (K=2) keypoints.
+decode_strategy: mrf_graph
+variance_filter_threshold: 3.0  # det(Sigma) ratio (used by variance_filter)
+
+# MRF Graph Decoding parameters (only used when decode_strategy = mrf_graph)
+mrf:
+  bone_length_sigma: 2.0       # Gaussian prior tolerance on bone lengths (in std devs)
+  use_covariance_score: true  # incorporate det(Sigma) into unary potentials

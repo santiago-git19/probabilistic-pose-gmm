@@ -49,6 +49,8 @@ from ..pipeline.scale_tta import (
 )
 from ..core.sampling import sample_from_heatmap
 from ..core.mixture import select_best_model, fit_with_outer_loop
+from ..core.mrf_decoder import MRFDecoder
+from ..core.skeleton import COCO_SKELETON
 from ..utils.metrics import (
     compute_oks,
     compute_nll,
@@ -295,6 +297,22 @@ class EvaluationRunner:
         else:
             self.mixture_cfg = mixture_node or {}
 
+        # ---- MRF decoder (Propuesta C) ------------------------------------
+        self._decode_strategy = str(self.mixture_cfg.get("decode_strategy", "argmax"))
+        if self._decode_strategy == "mrf_graph":
+            mrf_cfg = self.mixture_cfg.get("mrf", {})
+            self._mrf_decoder = MRFDecoder(
+                skeleton=COCO_SKELETON,
+                bone_length_sigma=float(mrf_cfg.get("bone_length_sigma", 2.0)),
+                use_covariance_score=bool(mrf_cfg.get("use_covariance_score", True)),
+            )
+            logger.info(
+                "MRF graph decoding enabled (bone_length_sigma=%.1f)",
+                self._mrf_decoder.bone_length_sigma,
+            )
+        else:
+            self._mrf_decoder = None
+
         # ---- dataloader ----------------------------------------------------
         self.dataloader = dataloader or _build_dataloader(cfg)
 
@@ -442,6 +460,8 @@ class EvaluationRunner:
                     reg_covar=float(self.mixture_cfg.get("regularization_strength", 1e-4)),
                     max_iter=int(self.mixture_cfg.get("max_iterations", 100)),
                     tol=float(self.mixture_cfg.get("convergence_threshold", 1e-4)),
+                    decode_strategy=str(self.mixture_cfg.get("decode_strategy", "argmax")),
+                    variance_threshold=float(self.mixture_cfg.get("variance_filter_threshold", 3.0)),
                 )
                 gmm_results.append(mixture_res)
                 ours_coords[k] = mixture_res.best_mean.astype(np.float32)
@@ -454,7 +474,16 @@ class EvaluationRunner:
                 ours_coords[k] = [float(x), float(y)]
                 ours_scores[k] = float(hm_k[y, x])
 
-        # Transform heatmap coords → image coords if metadata available
+        # 3b) MRF graph decoding (Propuesta C) -----------------------------
+        if self._mrf_decoder is not None and len(gmm_results) == num_kp:
+            try:
+                ours_coords = self._mrf_decoder.decode_pose(
+                    gmm_results, area, ours_coords
+                )
+            except Exception:
+                logger.debug("MRF decode failed; keeping per-keypoint coords")
+
+        # Transform heatmap coords -> image coords if metadata available
         if metadata_ref is not None:
             from ..utils.types import StandardizedHeatmap
 
@@ -808,6 +837,8 @@ class EvaluationRunner:
                     reg_covar=float(self.mixture_cfg.get("regularization_strength", 1e-4)),
                     max_iter=int(self.mixture_cfg.get("max_iterations", 100)),
                     tol=float(self.mixture_cfg.get("convergence_threshold", 1e-4)),
+                    decode_strategy=str(self.mixture_cfg.get("decode_strategy", "argmax")),
+                    variance_threshold=float(self.mixture_cfg.get("variance_filter_threshold", 3.0)),
                 )
                 gmm_results.append(mixture_res)
                 ours_coords[k] = mixture_res.best_mean.astype(np.float32)
@@ -831,7 +862,16 @@ class EvaluationRunner:
                 all_sampling_points.append(np.empty((0, 2), dtype=np.float32))
                 sampling_points_by_kp.append(np.empty((0, 2), dtype=np.float32))
 
-        # Transform heatmap → image coordinates
+        # 3b) MRF graph decoding (Propuesta C) -----------------------------
+        if self._mrf_decoder is not None and len(gmm_results) == num_kp:
+            try:
+                ours_coords = self._mrf_decoder.decode_pose(
+                    gmm_results, area, ours_coords
+                )
+            except Exception:
+                logger.debug("MRF decode failed; keeping per-keypoint coords")
+
+        # Transform heatmap -> image coordinates
         if metadata_ref is not None:
             from ..utils.types import StandardizedHeatmap
 
