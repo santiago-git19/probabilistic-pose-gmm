@@ -28,6 +28,7 @@ from typing import Optional, Dict, List, Union, Any
 import numpy as np
 import numpy.typing as npt
 from scipy import stats
+import scipy.linalg
 
 from .types import RefinedKeypoint, PoseEstimationResult
 
@@ -564,6 +565,176 @@ def classify_failure_mode(
     
     # 7. Default: Robust (catches edge cases)
     return "Robust"
+
+
+def compute_calibrated_covariance(
+    means_hm: npt.NDArray[np.float32],
+    covs_hm: npt.NDArray[np.float32],
+    weights: npt.NDArray[np.float32],
+    trans_matrix: npt.NDArray[np.float32],
+    scale_sq: float,
+    kappa: float
+) -> tuple[npt.NDArray[np.float32], float]:
+    """
+    Calculate the global covariance matrix of the mixture projected into the 
+    real image space, normalized by the COCO standard tolerance constants (OKS),
+    and extract the catastrophic failure probability.
+    
+    Theoretical Background:
+    ----------------------
+    Our model outputs a Gaussian Mixture + Uniform distribution:
+        P(x) = sum_{k=1}^K pi_k N(x | mu_k, Sigma_k) + pi_uniform U(x)
+        
+    We explicitly separate two types of uncertainty:
+    
+    1. Anatomical/Topological Uncertainty (The Gaussians):
+       The normalized Gaussians capture structural ambiguities like limb swaps, 
+       joint occlusions, or spatial blur. We compute the global covariance ONLY 
+       from these K components.
+       
+    2. Catastrophic Failure (The Uniform Component):
+       The uniform component acts as a "Trash bin" for outliers. If the model 
+       is completely lost due to severe occlusions or extreme image degradation, 
+       it will assign high probability to the background (uniform distribution).
+       A high uniform weight (>0.3 or 0.4) is a standalone scalar metric 
+       indicating catastrophic failure.
+       
+    Why exclude the Uniform Variance from Global Covariance?
+    --------------------------------------------------------
+    The variance of a uniform distribution over the whole image is mathematically 
+    colossal. If we included it in the total variance calculation, it would 
+    completely destroy the sensitivity of the uncertainty ellipse, saturating 
+    the metric and masking any subtle topological uncertainties captured by the 
+    Gaussians.
+    
+    Args:
+        means_hm: Means of the Gaussians in heatmap space, shape (K, 2).
+        covs_hm: Covariance matrices in heatmap space, shape (K, 2, 2).
+        weights: Mixture weights including the uniform component, shape (K+1,).
+                 weights[-1] is pi_uniform.
+        trans_matrix: Affine transformation matrix (2x3 or 3x3) mapping heatmap to image.
+        scale_sq: Squared person scale/area (s^2).
+        kappa: COCO anatomical keypoint constant (kappa_i).
+        
+    Returns:
+        Tuple containing:
+            - Sigma_final: Calibrated covariance matrix of shape (2, 2) from Gaussians.
+            - uniform_weight: The scalar probability of the uniform component.
+    """
+    # 1. Isolate the Uniform Component (Catastrophic Failure metric)
+    uniform_weight = float(weights[-1])
+    
+    # 2. Extract and Normalize Gaussian Weights (Anatomical Uncertainty)
+    gaussian_weights = weights[:-1]
+    weight_sum = np.sum(gaussian_weights)
+    
+    # Avoid division by zero if all Gaussian weights are somehow 0
+    if weight_sum > 1e-6:
+        norm_gaussian_weights = gaussian_weights / weight_sum
+    else:
+        norm_gaussian_weights = np.ones_like(gaussian_weights) / len(gaussian_weights)
+    
+    # 3. Affine Projection
+    S = trans_matrix[:2, :2]
+    t = trans_matrix[:2, 2]
+    
+    K = means_hm.shape[0]
+    
+    covs_img = np.zeros_like(covs_hm)
+    means_img = np.zeros_like(means_hm)
+    
+    for k in range(K):
+        # Project covariances: Sigma_{k, img} = S * Sigma_{k, hm} * S^T
+        covs_img[k] = S @ covs_hm[k] @ S.T
+        # Project means: mu_{k, img} = S * mu_{k, hm} + t
+        means_img[k] = S @ means_hm[k] + t
+        
+    # 4. Total Variance (Global Covariance of ONLY the Gaussian components)
+    # Global mean: mu_{global} = sum(pi_k_norm * mu_{k, img})
+    mu_global = np.sum(norm_gaussian_weights[:, np.newaxis] * means_img, axis=0)
+    
+    sigma_total = np.zeros((2, 2), dtype=np.float32)
+    for k in range(K):
+        diff = means_img[k] - mu_global
+        inter_cov = np.outer(diff, diff)
+        # Combine intra-component variance and inter-component variance
+        sigma_total += norm_gaussian_weights[k] * (covs_img[k] + inter_cov)
+        
+    # 5. OKS Calibration: scale the matrix to be aware of anatomical tolerance
+    norm_factor = scale_sq * (kappa ** 2)
+    if norm_factor <= 0:
+        norm_factor = 1e-6
+        
+    sigma_final = (1.0 / norm_factor) * sigma_total
+    
+    # Add epsilon to diagonal to guarantee positive semi-definite (PSD)
+    sigma_final += 1e-6 * np.eye(2)
+    
+    return sigma_final.astype(np.float32), uniform_weight
+
+
+def compute_gmm_diagnostics(
+    mu1: npt.NDArray[np.float32],
+    cov1: npt.NDArray[np.float32],
+    mu2: npt.NDArray[np.float32],
+    cov2: npt.NDArray[np.float32]
+) -> Dict[str, float]:
+    """
+    Compute dissimilarity metrics between two Gaussians (K=2) as diagnostics 
+    to identify topological uncertainty (e.g., limb swaps).
+    
+    Calculates Kullback-Leibler (KL) divergence and squared Wasserstein distance (W2^2).
+    
+    Args:
+        mu1: Mean of Gaussian 1 (projected to image space), shape (2,).
+        cov1: Covariance of Gaussian 1 (projected), shape (2, 2).
+        mu2: Mean of Gaussian 2 (projected), shape (2,).
+        cov2: Covariance of Gaussian 2 (projected), shape (2, 2).
+        
+    Returns:
+        Dictionary containing:
+            - 'kl_divergence': float
+            - 'wasserstein_dist_sq': float
+    """
+    # Prevent singular matrices / division by zero
+    eps = 1e-6
+    c1 = cov1 + eps * np.eye(2)
+    c2 = cov2 + eps * np.eye(2)
+    
+    det1 = max(np.linalg.det(c1), eps)
+    det2 = max(np.linalg.det(c2), eps)
+    
+    inv2 = np.linalg.inv(c2)
+    
+    # Kullback-Leibler (KL) Divergence
+    diff = mu2 - mu1
+    mahalanobis = diff.T @ inv2 @ diff
+    trace_term = np.trace(inv2 @ c1)
+    
+    kl_div = 0.5 * (np.log(det2 / det1) - 2.0 + trace_term + mahalanobis)
+    
+    # Wasserstein distance (W2^2)
+    mean_diff_sq = np.sum(diff ** 2)
+    
+    # scipy.linalg.sqrtm calculates the matrix square root
+    sqrt_c1 = scipy.linalg.sqrtm(c1)
+    # Ensure real in case of slight numerical issues producing complex parts
+    if np.iscomplexobj(sqrt_c1):
+        sqrt_c1 = sqrt_c1.real
+        
+    cross_term = sqrt_c1 @ c2 @ sqrt_c1
+    sqrt_cross = scipy.linalg.sqrtm(cross_term)
+    if np.iscomplexobj(sqrt_cross):
+        sqrt_cross = sqrt_cross.real
+        
+    trace_w2 = np.trace(c1 + c2 - 2 * sqrt_cross)
+    
+    wasserstein_sq = mean_diff_sq + trace_w2
+    
+    return {
+        "kl_divergence": float(kl_div),
+        "wasserstein_dist_sq": float(wasserstein_sq)
+    }
 
 
 # ============================================================================
