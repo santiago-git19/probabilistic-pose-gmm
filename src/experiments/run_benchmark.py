@@ -56,7 +56,7 @@ def main(cfg: DictConfig) -> None:
     
     with wandb_run(
         cfg,
-        name=f"benchmark_{cfg.model.name}_{cfg.dataset.name}",
+        name=f"MRF_benchmark_{cfg.model.name}_{cfg.dataset.name}",
         tags=["benchmark", cfg.dataset.name, cfg.model.name],
         job_type="benchmark",
     ):
@@ -83,12 +83,18 @@ def main(cfg: DictConfig) -> None:
             log.info("\n[2/3] Mass Evaluation: RUNNING...")
             log.info("      This may take several minutes...")
             
+            original_dataloader = runner.dataloader
             # Apply debug limit if set
             if debug_limit is not None:
                 import itertools
-                runner.dataloader = itertools.islice(runner.dataloader, debug_limit)
+                runner.dataloader = itertools.islice(original_dataloader, debug_limit)
             
             df = runner.run_mass_evaluation()
+            
+            # Restore original dataloader so it's not exhausted
+            if debug_limit is not None:
+                runner.dataloader = original_dataloader
+                
             log.info("      [OK] Saved %d results to %s", len(df), parquet_path.name)
 
         # --- wandb: log métricas escalares agregadas ----------------------
@@ -163,6 +169,10 @@ def main(cfg: DictConfig) -> None:
         log.info("\n[4/4] Deep Profiling: Capturing full artefacts...")
         log.info("      This will save ~%.1f MB per image (compressed)", 2.5)
         
+        if debug_limit is not None:
+            import itertools
+            runner.dataloader = itertools.islice(runner.dataloader, debug_limit)
+            
         saved_paths = runner.run_deep_profiling(focus_groups)
         log.info("      [OK] Saved %d analysis packets", len(saved_paths))
 

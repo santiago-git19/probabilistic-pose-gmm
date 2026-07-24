@@ -297,9 +297,24 @@ class MRFDecoder:
 
             parent = self.skeleton.parent(node)
             if parent is None or parent not in chosen:
-                # Parent not decoded -> use argmax unary for this node
+                # Parent not decoded -> treat this node as a new root
                 if node in unary_scores:
-                    chosen[node] = int(np.argmax(unary_scores[node]))
+                    up_node = unary_potentials[node]
+                    node_unary = unary_scores[node]
+                    best_score = -np.inf
+                    best_idx = 0
+                    
+                    for c_idx in range(up_node.num_candidates):
+                        score = node_unary[c_idx]
+                        for child in self.skeleton.children(node):
+                            if child in messages_score:
+                                if c_idx < len(messages_score[child]):
+                                    score += messages_score[child][c_idx]
+                        if score > best_score:
+                            best_score = score
+                            best_idx = c_idx
+                            
+                    chosen[node] = best_idx
                 continue
 
             if node not in messages_argmax:
@@ -362,6 +377,9 @@ class MRFDecoder:
         for k in range(num_kp):
             mr: MixtureResult = gmm_results[k]
             comps = mr.components
+
+            if len(comps) == 0:
+                continue
 
             if len(comps) >= 2:
                 # Bimodal -> provide all candidates to MRF

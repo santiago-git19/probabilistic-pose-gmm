@@ -222,9 +222,9 @@ def check_limb_swaps(
             oks_l_r = single_kp_oks(l, r, r)
             oks_r_l = single_kp_oks(r, l, l)
             
-            # A keypoint is swapped if it's much better assigned to the other side
-            is_l_swapped = (oks_l_r > oks_l_l) and (oks_l_r > 0.3)
-            is_r_swapped = (oks_r_l > oks_r_r) and (oks_r_l > 0.3)
+            # A keypoint is swapped if it's much better assigned to the other side (at least 0.1 OKS difference)
+            is_l_swapped = (oks_l_r > oks_l_l + 0.7) and (oks_l_r > 0.7)
+            is_r_swapped = (oks_r_l > oks_r_r + 0.7) and (oks_r_l > 0.7)
             
             # If at least one limb of the pair is swapped, count it as a swapped pair
             if is_l_swapped or is_r_swapped:

@@ -420,19 +420,9 @@ EXPERIMENTS: Dict[str, Dict[str, Any]] = {
 '''
 
 EXPERIMENTS: Dict[str, Dict[str, Any]] = {
-    # =========================================================================
-    # MRF Graph Decoding Ablation (Propuesta C)
-    # Testing hyperparameters under a fixed resolution degradation (0.125)
-    # =========================================================================
-
-    # --- 1. Ablation on use_covariance_score ---
-    "MRF_CovScore_True": {"dataset.resize_scale": 0.125, "decode_strategy": "mrf_graph", "mrf.use_covariance_score": True, "wandb_group": "mrf_ablation_cov"},
-    "MRF_CovScore_False": {"dataset.resize_scale": 0.125, "decode_strategy": "mrf_graph", "mrf.use_covariance_score": False, "wandb_group": "mrf_ablation_cov"},
-
-    # --- 2. Ablation on bone_length_sigma ---
-    "MRF_Sigma_1.0": {"dataset.resize_scale": 0.125, "decode_strategy": "mrf_graph", "mrf.bone_length_sigma": 1.0, "wandb_group": "mrf_ablation_sigma"},
-    "MRF_Sigma_2.0": {"dataset.resize_scale": 0.125, "decode_strategy": "mrf_graph", "mrf.bone_length_sigma": 2.0, "wandb_group": "mrf_ablation_sigma"},
-    "MRF_Sigma_3.0": {"dataset.resize_scale": 0.125, "decode_strategy": "mrf_graph", "mrf.bone_length_sigma": 3.0, "wandb_group": "mrf_ablation_sigma"},
+    "resolution_0.5": {"dataset.resize_scale": 0.5, "wandb_group": "OCHUMAN_resolution"},
+    "resolution_0.25": {"dataset.resize_scale": 0.25, "wandb_group": "OCHUMAN_resolution"},
+    "resolution_0.125": {"dataset.resize_scale": 0.125, "wandb_group": "OCHUMAN_resolution"},
 }
 
 

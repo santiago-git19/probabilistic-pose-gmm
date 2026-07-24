@@ -475,11 +475,39 @@ class EvaluationRunner:
                 ours_scores[k] = float(hm_k[y, x])
 
         # 3b) MRF graph decoding (Propuesta C) -----------------------------
+        mrf_applied_and_transformed = False
         if self._mrf_decoder is not None and len(gmm_results) == num_kp:
-            try:
-                ours_coords = self._mrf_decoder.decode_pose(
-                    gmm_results, area, ours_coords
+            import copy
+            mrf_gmm_results = copy.deepcopy(gmm_results)
+            ours_coords_mrf = ours_coords.copy()
+            
+            if metadata_ref is not None:
+                from ..utils.types import StandardizedHeatmap
+                ref_hm = StandardizedHeatmap(
+                    data=heatmap_avg,
+                    original_size=(image.shape[0], image.shape[1]),
+                    metadata=metadata_ref,
                 )
+                try:
+                    ours_coords_mrf = MMPoseAdapter.transform_heatmap_coords_to_image(ours_coords_mrf, ref_hm)
+                    for mr in mrf_gmm_results:
+                        if mr is not None and len(mr.components) > 0:
+                            means = np.array([c.mean for c in mr.components], dtype=np.float32)
+                            covs = np.array([c.covariance for c in mr.components], dtype=np.float32)
+                            m_img, c_img = MMPoseAdapter.transform_heatmap_gaussians_to_image(means, covs, ref_hm)
+                            for i, comp in enumerate(mr.components):
+                                comp.mean = m_img[i]
+                                comp.covariance = c_img[i]
+                            mr.best_mean = m_img[np.argmax([c.weight for c in mr.components])]
+                except Exception as e:
+                    logger.debug("Coord transform before MRF failed: %s", e)
+
+            try:
+                ours_coords_mrf = self._mrf_decoder.decode_pose(
+                    mrf_gmm_results, area, ours_coords_mrf
+                )
+                ours_coords = ours_coords_mrf
+                mrf_applied_and_transformed = (metadata_ref is not None)
             except Exception:
                 logger.debug("MRF decode failed; keeping per-keypoint coords")
 
@@ -492,12 +520,13 @@ class EvaluationRunner:
                 original_size=(image.shape[0], image.shape[1]),
                 metadata=metadata_ref,
             )
-            try:
-                ours_coords = MMPoseAdapter.transform_heatmap_coords_to_image(
-                    ours_coords, ref_hm
-                )
-            except Exception:
-                logger.debug("Coord transform failed; using raw heatmap coords")
+            if not mrf_applied_and_transformed:
+                try:
+                    ours_coords = MMPoseAdapter.transform_heatmap_coords_to_image(
+                        ours_coords, ref_hm
+                    )
+                except Exception:
+                    logger.debug("Coord transform failed; using raw heatmap coords")
 
             # TTA-only: use the model's official decoder on the averaged heatmap.
             # This replicates exactly what the model does internally (including
@@ -863,11 +892,39 @@ class EvaluationRunner:
                 sampling_points_by_kp.append(np.empty((0, 2), dtype=np.float32))
 
         # 3b) MRF graph decoding (Propuesta C) -----------------------------
+        mrf_applied_and_transformed = False
         if self._mrf_decoder is not None and len(gmm_results) == num_kp:
-            try:
-                ours_coords = self._mrf_decoder.decode_pose(
-                    gmm_results, area, ours_coords
+            import copy
+            mrf_gmm_results = copy.deepcopy(gmm_results)
+            ours_coords_mrf = ours_coords.copy()
+            
+            if metadata_ref is not None:
+                from ..utils.types import StandardizedHeatmap
+                ref_hm = StandardizedHeatmap(
+                    data=heatmap_avg,
+                    original_size=(image.shape[0], image.shape[1]),
+                    metadata=metadata_ref,
                 )
+                try:
+                    ours_coords_mrf = MMPoseAdapter.transform_heatmap_coords_to_image(ours_coords_mrf, ref_hm)
+                    for mr in mrf_gmm_results:
+                        if mr is not None and len(mr.components) > 0:
+                            means = np.array([c.mean for c in mr.components], dtype=np.float32)
+                            covs = np.array([c.covariance for c in mr.components], dtype=np.float32)
+                            m_img, c_img = MMPoseAdapter.transform_heatmap_gaussians_to_image(means, covs, ref_hm)
+                            for i, comp in enumerate(mr.components):
+                                comp.mean = m_img[i]
+                                comp.covariance = c_img[i]
+                            mr.best_mean = m_img[np.argmax([c.weight for c in mr.components])]
+                except Exception as e:
+                    logger.debug("Coord transform before MRF failed: %s", e)
+
+            try:
+                ours_coords_mrf = self._mrf_decoder.decode_pose(
+                    mrf_gmm_results, area, ours_coords_mrf
+                )
+                ours_coords = ours_coords_mrf
+                mrf_applied_and_transformed = (metadata_ref is not None)
             except Exception:
                 logger.debug("MRF decode failed; keeping per-keypoint coords")
 
@@ -880,12 +937,13 @@ class EvaluationRunner:
                 original_size=(image.shape[0], image.shape[1]),
                 metadata=metadata_ref,
             )
-            try:
-                ours_coords = MMPoseAdapter.transform_heatmap_coords_to_image(
-                    ours_coords, ref_hm
-                )
-            except Exception:
-                logger.debug("Coord transform failed; raw heatmap coords used")
+            if not mrf_applied_and_transformed:
+                try:
+                    ours_coords = MMPoseAdapter.transform_heatmap_coords_to_image(
+                        ours_coords, ref_hm
+                    )
+                except Exception:
+                    logger.debug("Coord transform failed; raw heatmap coords used")
 
         oks_ours, per_kp_oks_ours = compute_oks(ours_coords[:, :2], gt_coords, vis, area)
         
