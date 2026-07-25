@@ -58,6 +58,9 @@ from ..utils.metrics import (
     compute_covariance_volume,
     count_active_components,
     check_limb_swaps,
+    compute_calibrated_covariance,
+    compute_gmm_diagnostics,
+    COCO_SIGMAS,
 )
 from ..utils.types import ImageSample, MixtureResult
 from ..data_loader import COCOLoader, CrowdPoseLoader, OCHumanLoader
@@ -555,6 +558,8 @@ class EvaluationRunner:
 
         # 4) Scalar metrics ------------------------------------------------
         oks_ours, per_kp_oks_ours = compute_oks(ours_coords[:, :2], gt_coords, vis, area)
+
+
         oks_tta, per_kp_oks_tta = compute_oks(tta_coords[:, :2], gt_coords, vis, area)
         
         swaps_base_arr = check_limb_swaps(base_coords_2d, gt_coords, vis, area)
@@ -579,11 +584,78 @@ class EvaluationRunner:
         # Aggregate GMM metrics over keypoints
         all_weights: List[npt.NDArray] = []
         all_covs: List[npt.NDArray] = []
-        for mr in gmm_results:
+        
+        # New arrays for diagnostic metrics
+        uniform_weights_kp = np.zeros(num_kp, dtype=np.float32)
+        wasserstein_kp = np.zeros(num_kp, dtype=np.float32)
+        kl_div_kp = np.zeros(num_kp, dtype=np.float32)
+        cov_det_kp = np.zeros(num_kp, dtype=np.float32)
+        
+        # Prepare reference heatmap for coordinate transformations if needed
+        ref_hm_for_trans = locals().get('ref_hm', None)
+        if ref_hm_for_trans is None and metadata_ref is not None:
+            print("[NOTIFICACIÓN] Flujo alternativo: 'ref_hm' no se encontró en variables locales. Construyendo StandardizedHeatmap de respaldo.")
+            try:
+                from ..utils.types import StandardizedHeatmap
+                ref_hm_for_trans = StandardizedHeatmap(
+                    data=heatmap_avg,
+                    original_size=(image.shape[0], image.shape[1]),
+                    metadata=metadata_ref,
+                )
+            except Exception as e:
+                print(f"[ERROR/EXCEPCIÓN] Falló la construcción de StandardizedHeatmap en el bloque except: {e}")
+                logger.debug(f"Excepción al construir StandardizedHeatmap de respaldo: {e}")
+                ref_hm_for_trans = None
+
+        for k, mr in enumerate(gmm_results):
+            if mr is None or not mr.components:
+                continue
+                
             w = np.array([c.weight for c in mr.components], dtype=np.float32)
             c = np.array([c.covariance for c in mr.components], dtype=np.float32)
+            m = np.array([c.mean for c in mr.components], dtype=np.float32)
             all_weights.append(w)
             all_covs.append(c)
+            
+            # Transform means and covariances to image space using MMPoseAdapter
+            if ref_hm_for_trans is not None:
+                try:
+                    m_img, c_img = MMPoseAdapter.transform_heatmap_gaussians_to_image(m, c, ref_hm_for_trans)
+                except Exception as e:
+
+                    print(f"[ERROR/EXCEPCIÓN] Falló transform_heatmap_gaussians_to_image en keypoint {k}: {e}")
+                    logger.debug(f"Transform gaussians failed for kp {k}: {e}")
+                    m_img, c_img = m, c
+            else:
+                m_img, c_img = m, c
+            
+            # 1. Uniform weight
+            uniform_weights_kp[k] = float(mr.uniform_weight)
+            
+            # 2. Calibrated Covariance (directly in image space)
+            w_full = np.append(w, mr.uniform_weight)
+            kappa = float(COCO_SIGMAS[k]) if k < len(COCO_SIGMAS) else 0.05
+            
+            try:
+                sigma_final, _ = compute_calibrated_covariance(
+                    means_img=m_img,
+                    covs_img=c_img,
+                    weights=w_full,
+                    scale_sq=float(area),
+                    kappa=kappa
+                )
+                cov_det_kp[k] = float(np.linalg.det(sigma_final))
+            except Exception as e:
+                logger.debug(f"Calibrated covariance failed for kp {k}: {e}")
+                
+            # 3. Diagnostics (if K == 2, pass directly in image space)
+            if len(mr.components) == 2:
+                try:
+                    diag = compute_gmm_diagnostics(m_img[0], c_img[0], m_img[1], c_img[1])
+                    kl_div_kp[k] = diag['kl_divergence']
+                    wasserstein_kp[k] = diag['wasserstein_dist_sq']
+                except Exception as e:
+                    logger.debug(f"GMM diagnostics failed for kp {k}: {e}")
 
         if all_weights:
             avg_weights = np.mean(
@@ -629,6 +701,18 @@ class EvaluationRunner:
                     pass
         nll_val = nll_val / max(len(gmm_results), 1)
 
+        # Calculate heatmap entropy
+        heatmap_entropy_kp = np.zeros(num_kp, dtype=np.float32)
+        for k in range(num_kp):
+            hm = heatmap_avg[k].astype(np.float64)
+            hm = np.clip(hm, 0, None)
+            s = np.sum(hm)
+            if s > 0:
+                p = hm / s
+                heatmap_entropy_kp[k] = -np.sum(p[p > 0] * np.log(p[p > 0]))
+            else:
+                heatmap_entropy_kp[k] = 0.0
+
         # Build metrics dict with per-keypoint OKS values
         metrics_dict = {
             "image_id": sample.image_id,
@@ -650,6 +734,10 @@ class EvaluationRunner:
             "entropy": float(entropy_val),
             "covariance_vol": float(cov_vol),
             "n_components": int(n_components),
+            "uniform_weight_mean": float(np.mean(uniform_weights_kp)),
+            "wasserstein_mean": float(np.mean(wasserstein_kp)),
+            "base_score_mean": float(np.mean(base_scores)) if len(base_scores) > 0 else 0.0,
+            "heatmap_entropy_mean": float(np.mean(heatmap_entropy_kp)),
         }
         
         # Add per-keypoint OKS values with COCO keypoint names
@@ -658,6 +746,15 @@ class EvaluationRunner:
                 metrics_dict[f"oks_base_{kp_name}"] = float(per_kp_oks_base[i]) if not np.isnan(per_kp_oks_base[i]) else None
                 metrics_dict[f"oks_ours_{kp_name}"] = float(per_kp_oks_ours[i]) if not np.isnan(per_kp_oks_ours[i]) else None
                 metrics_dict[f"delta_oks_{kp_name}"] = float(per_kp_delta_oks[i]) if not np.isnan(per_kp_delta_oks[i]) else None
+                metrics_dict[f"uniform_weight_{kp_name}"] = float(uniform_weights_kp[i])
+                metrics_dict[f"wasserstein_{kp_name}"] = float(wasserstein_kp[i])
+                metrics_dict[f"kl_div_{kp_name}"] = float(kl_div_kp[i])
+                metrics_dict[f"cov_det_{kp_name}"] = float(cov_det_kp[i])
+                metrics_dict[f"base_score_{kp_name}"] = float(base_scores[i]) if i < len(base_scores) else None
+                metrics_dict[f"heatmap_entropy_{kp_name}"] = float(heatmap_entropy_kp[i])
+                metrics_dict[f"vis_{kp_name}"] = int(vis[i]) if i < len(vis) else 0
+                
+        metrics_dict["swaps_ours_arr"] = [bool(s) for s in swaps_ours_arr]
         
         return metrics_dict
 

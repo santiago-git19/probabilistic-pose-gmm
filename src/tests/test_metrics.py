@@ -547,6 +547,28 @@ def test_classify_all_modes():
 
 
 # ============================================================================
+# Tests: compute_calibrated_covariance
+# ============================================================================
+
+def test_calibrated_covariance_basic():
+    """Test compute_calibrated_covariance with direct image-space inputs."""
+    from pose_uncertainty.utils.metrics import compute_calibrated_covariance
+    means_img = np.array([[100.0, 200.0], [105.0, 205.0]], dtype=np.float32)
+    covs_img = np.array([np.eye(2) * 2.0, np.eye(2) * 3.0], dtype=np.float32)
+    weights = np.array([0.4, 0.4, 0.2], dtype=np.float32)  # last is uniform
+    scale_sq = 10000.0
+    kappa = 0.05
+    
+    sigma_final, uniform_weight = compute_calibrated_covariance(
+        means_img, covs_img, weights, scale_sq, kappa
+    )
+    
+    np.testing.assert_almost_equal(uniform_weight, 0.2, decimal=5)
+    assert sigma_final.shape == (2, 2)
+    assert np.all(np.linalg.eigvals(sigma_final) > 0)  # Positive definite
+
+
+# ============================================================================
 # Integration Tests
 # ============================================================================
 

@@ -568,17 +568,16 @@ def classify_failure_mode(
 
 
 def compute_calibrated_covariance(
-    means_hm: npt.NDArray[np.float32],
-    covs_hm: npt.NDArray[np.float32],
+    means_img: npt.NDArray[np.float32],
+    covs_img: npt.NDArray[np.float32],
     weights: npt.NDArray[np.float32],
-    trans_matrix: npt.NDArray[np.float32],
     scale_sq: float,
     kappa: float
 ) -> tuple[npt.NDArray[np.float32], float]:
     """
-    Calculate the global covariance matrix of the mixture projected into the 
-    real image space, normalized by the COCO standard tolerance constants (OKS),
-    and extract the catastrophic failure probability.
+    Calculate the global covariance matrix of the mixture in image space, 
+    normalized by the COCO standard tolerance constants (OKS), and extract 
+    the catastrophic failure probability.
     
     Theoretical Background:
     ----------------------
@@ -608,11 +607,10 @@ def compute_calibrated_covariance(
     Gaussians.
     
     Args:
-        means_hm: Means of the Gaussians in heatmap space, shape (K, 2).
-        covs_hm: Covariance matrices in heatmap space, shape (K, 2, 2).
+        means_img: Means of the Gaussians in image space, shape (K, 2).
+        covs_img: Covariance matrices in image space, shape (K, 2, 2).
         weights: Mixture weights including the uniform component, shape (K+1,).
                  weights[-1] is pi_uniform.
-        trans_matrix: Affine transformation matrix (2x3 or 3x3) mapping heatmap to image.
         scale_sq: Squared person scale/area (s^2).
         kappa: COCO anatomical keypoint constant (kappa_i).
         
@@ -632,22 +630,10 @@ def compute_calibrated_covariance(
     if weight_sum > 1e-6:
         norm_gaussian_weights = gaussian_weights / weight_sum
     else:
+        print("all Gaussian weights are somehow 0")
         norm_gaussian_weights = np.ones_like(gaussian_weights) / len(gaussian_weights)
     
-    # 3. Affine Projection
-    S = trans_matrix[:2, :2]
-    t = trans_matrix[:2, 2]
-    
-    K = means_hm.shape[0]
-    
-    covs_img = np.zeros_like(covs_hm)
-    means_img = np.zeros_like(means_hm)
-    
-    for k in range(K):
-        # Project covariances: Sigma_{k, img} = S * Sigma_{k, hm} * S^T
-        covs_img[k] = S @ covs_hm[k] @ S.T
-        # Project means: mu_{k, img} = S * mu_{k, hm} + t
-        means_img[k] = S @ means_hm[k] + t
+    K = means_img.shape[0]
         
     # 4. Total Variance (Global Covariance of ONLY the Gaussian components)
     # Global mean: mu_{global} = sum(pi_k_norm * mu_{k, img})
@@ -964,3 +950,4 @@ def compute_uncertainty_calibration(
         "mce": 0.0,
         "reliability_diagram": {}
     }
+

@@ -166,7 +166,9 @@ def _packet_to_samples(
         "entropy":           float(metrics.get("entropy", 0.0)),
         "oks_base":          float(metrics.get("oks_base", 0.0)),
         "oks_ours":          float(metrics.get("oks_ours", 0.0)),
-        "covariance_volume": float(metrics.get("covariance_volume", 0.0)),
+        "covariance_volume": float(metrics.get("covariance_vol", 0.0)),
+        "uniform_weight":    float(metrics.get("uniform_weight_mean", 0.0)),
+        "wasserstein":       float(metrics.get("wasserstein_mean", 0.0)),
     }
 
     group = fo.Group()
