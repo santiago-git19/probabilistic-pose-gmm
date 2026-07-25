@@ -29,9 +29,20 @@ def _unroll_keypoints(df: pd.DataFrame) -> pd.DataFrame:
                 vis = row[f"vis_{kp}"]
                 # Ignoramos los no etiquetados (vis == 0 o NaN)
                 if pd.notna(vis) and vis > 0:
+                    # Obtener o inferir el número de componentes (1 o 2 gaussianas)
+                    if f"n_components_{kp}" in row and pd.notna(row[f"n_components_{kp}"]):
+                        n_comp = int(row[f"n_components_{kp}"])
+                    elif f"wasserstein_{kp}" in row and pd.notna(row[f"wasserstein_{kp}"]):
+                        n_comp = 2 if row[f"wasserstein_{kp}"] > 0 else 1
+                    elif f"kl_div_{kp}" in row and pd.notna(row[f"kl_div_{kp}"]):
+                        n_comp = 2 if row[f"kl_div_{kp}"] > 0 else 1
+                    else:
+                        n_comp = np.nan
+
                     r = {
                         "keypoint": kp,
                         "vis": int(vis),
+                        "n_components": n_comp,
                         "oks_ours": row.get(f"oks_ours_{kp}", np.nan),
                         "cov_det": row.get(f"cov_det_{kp}", np.nan),
                         "base_score": row.get(f"base_score_{kp}", np.nan),
@@ -202,6 +213,18 @@ def generate_all_plots(df: pd.DataFrame, output_dir: Union[str, Path]):
     if not df_kp.empty:
         plot_sparsification(df_kp, output_dir, suffix="_all")
         plot_ece(df_kp, output_dir, suffix="_all")
+        
+    df_1comp = df_kp[df_kp["n_components"] == 1]
+    df_2comp = df_kp[df_kp["n_components"] == 2]
+    
+    log.info("Generando Sparsification Plots y ECE (por número de gaussianas)...")
+    if not df_1comp.empty:
+        plot_sparsification(df_1comp, output_dir, suffix="_1_gaussian")
+        plot_ece(df_1comp, output_dir, suffix="_1_gaussian")
+        
+    if not df_2comp.empty:
+        plot_sparsification(df_2comp, output_dir, suffix="_2_gaussians")
+        plot_ece(df_2comp, output_dir, suffix="_2_gaussians")
     
     log.info("Generando Curvas ROC de Limb Swaps (global)...")
     plot_limb_swap_roc(df, output_dir)

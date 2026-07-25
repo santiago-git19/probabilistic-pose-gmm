@@ -590,6 +590,7 @@ class EvaluationRunner:
         wasserstein_kp = np.zeros(num_kp, dtype=np.float32)
         kl_div_kp = np.zeros(num_kp, dtype=np.float32)
         cov_det_kp = np.zeros(num_kp, dtype=np.float32)
+        n_components_kp = np.zeros(num_kp, dtype=np.int32)
         
         # Prepare reference heatmap for coordinate transformations if needed
         ref_hm_for_trans = locals().get('ref_hm', None)
@@ -629,8 +630,9 @@ class EvaluationRunner:
             else:
                 m_img, c_img = m, c
             
-            # 1. Uniform weight
+            # 1. Uniform weight and component count
             uniform_weights_kp[k] = float(mr.uniform_weight)
+            n_components_kp[k] = len(mr.components)
             
             # 2. Calibrated Covariance (directly in image space)
             w_full = np.append(w, mr.uniform_weight)
@@ -752,6 +754,7 @@ class EvaluationRunner:
                 metrics_dict[f"cov_det_{kp_name}"] = float(cov_det_kp[i])
                 metrics_dict[f"base_score_{kp_name}"] = float(base_scores[i]) if i < len(base_scores) else None
                 metrics_dict[f"heatmap_entropy_{kp_name}"] = float(heatmap_entropy_kp[i])
+                metrics_dict[f"n_components_{kp_name}"] = int(n_components_kp[i])
                 metrics_dict[f"vis_{kp_name}"] = int(vis[i]) if i < len(vis) else 0
                 
         metrics_dict["swaps_ours_arr"] = [bool(s) for s in swaps_ours_arr]
