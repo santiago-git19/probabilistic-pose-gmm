@@ -72,8 +72,15 @@ def compute_ause(df: pd.DataFrame, error_col: str, uncertainty_col: str) -> floa
     return ause, fractions, oracle_retained, model_retained
 
 
-def plot_sparsification(df: pd.DataFrame, output_dir: Path, suffix: str = ""):
-    """Genera Sparsification Plot (AUSE) a nivel de keypoint."""
+def plot_sparsification(
+    df: pd.DataFrame, 
+    output_dir: Path, 
+    suffix: str = "",
+    beta: float = 0.012,
+    strategy: str = "max_pooling",
+    tau: float = 0.5
+):
+    """Genera Sparsification Plot (AUSE) a nivel de keypoint con Fusión Adaptativa."""
     if df.empty or "cov_det" not in df.columns:
         return
 
@@ -86,6 +93,26 @@ def plot_sparsification(df: pd.DataFrame, output_dir: Path, suffix: str = ""):
     plt.plot(fractions, model, label=f"Uncertainty (det(Sigma)) - AUSE: {ause:.4f}", color="blue", linewidth=2)
     plt.plot(fractions, oracle, label="Oracle (True Error)", color="black", linestyle="--", linewidth=2)
     plt.fill_between(fractions, oracle, model, color="blue", alpha=0.1)
+    
+    # 1. Fusión Adaptativa: Mapeo probabilístico exponencial al espacio [0, 1]
+    if "base_score" in df.columns and not df["base_score"].isna().all():
+        u_base = 1.0 - df["base_score"]
+        u_gmm = 1.0 - np.exp(-beta * df["cov_det"])
+        
+        # Estrategia A: Enfoque Pesimista (Max-Pooling)
+        df["u_adapt_mp"] = np.maximum(u_base, u_gmm)
+        ause_mp, _, _, model_mp = compute_ause(df, "error", "u_adapt_mp")
+        plt.plot(fractions, model_mp, label=f"Adaptive (Max-Pooling) - AUSE: {ause_mp:.4f}", color="magenta", linewidth=2)
+        
+        # Estrategia B: Interruptor Topológico (Gating)
+        n_comp = df["n_components"] if "n_components" in df.columns else pd.Series(1, index=df.index)
+        if strategy == "gating_tau":
+            cond = (n_comp == 2) | (u_gmm > tau)
+        else:
+            cond = (n_comp == 2)
+        df["u_adapt_gate"] = np.where(cond, u_gmm, u_base)
+        ause_gate, _, _, model_gate = compute_ause(df, "error", "u_adapt_gate")
+        plt.plot(fractions, model_gate, label=f"Adaptive (Gating K=2) - AUSE: {ause_gate:.4f}", color="cyan", linewidth=2)
     
     if "base_score" in df.columns and not df["base_score"].isna().all():
         df["inv_base_score"] = -df["base_score"]
@@ -123,60 +150,64 @@ def plot_ece(df: pd.DataFrame, output_dir: Path, n_bins: int = 10, suffix: str =
     ).reset_index()
     
     plt.figure(figsize=(8, 6))
-    plt.scatter(grouped["mean_unc"], grouped["mean_err"], s=grouped["count"], alpha=0.6, color="purple")
-    plt.plot(grouped["mean_unc"], grouped["mean_err"], color="purple", linestyle="-", alpha=0.4)
+    plt.scatter(np.log1p(grouped["mean_unc"]), grouped["mean_err"], s=grouped["count"], alpha=0.6, color="purple")
+    plt.plot(np.log1p(grouped["mean_unc"]), grouped["mean_err"], color="purple", linestyle="-", alpha=0.4)
     
     plt.xlabel("Mean Uncertainty (Volume)")
     plt.ylabel("Mean Error (1 - OKS)")
     title_suffix = suffix.replace("_", " ").title()
-    plt.title(f"Reliability Diagram ({title_suffix.strip()})")
-    
-    plt.savefig(output_dir / f"ece_calibration{suffix}.png", dpi=300, bbox_inches="tight")
+    plt.title(f"Expected Calibration Error ({title_suffix.strip()})")
+    plt.tight_layout()
+    plt.savefig(output_dir / f"ece_calibration{suffix}.png", dpi=300)
     plt.close()
 
 
 def plot_limb_swap_roc(df: pd.DataFrame, output_dir: Path):
-    """Dibuja curva ROC para la detección de limb swaps usando Wasserstein y KL a nivel de imagen."""
-    swaps_true = []
-    wasserstein_scores = []
-    kl_scores = []
-    
-    for _, row in df.iterrows():
-        if "swaps_ours_arr" not in row or not isinstance(row["swaps_ours_arr"], (list, np.ndarray)):
-            continue
-            
-        swaps_arr = row["swaps_ours_arr"]
-        is_swap = any(swaps_arr)
-        if "wasserstein_mean" in row and "kl_div_mean" in row:
-            swaps_true.append(int(is_swap))
-            wasserstein_scores.append(row["wasserstein_mean"])
-            kl_scores.append(row["kl_div_mean"])
-
-    if len(swaps_true) == 0 or sum(swaps_true) == 0:
-        log.warning("No hay suficientes datos de limb swaps para graficar ROC.")
+    """Calcula ROC AUC para detectar limb swaps y auto-oclusiones severas."""
+    if df.empty or "is_swapped" not in df.columns or "cov_det" not in df.columns:
         return
-
-    fpr_w, tpr_w, _ = roc_curve(swaps_true, wasserstein_scores)
-    roc_auc_w = auc(fpr_w, tpr_w)
+        
+    y_true = df["is_swapped"].astype(int)
+    if y_true.nunique() < 2:
+        return
+        
+    y_scores = df["cov_det"]
     
-    fpr_kl, tpr_kl, _ = roc_curve(swaps_true, kl_scores)
-    roc_auc_kl = auc(fpr_kl, tpr_kl)
-
-    plt.figure(figsize=(8, 6))
-    plt.plot(fpr_w, tpr_w, color="darkorange", lw=2, label=f"Wasserstein (AUC = {roc_auc_w:.3f})")
-    plt.plot(fpr_kl, tpr_kl, color="navy", lw=2, label=f"KL Div (AUC = {roc_auc_kl:.3f})")
-    plt.plot([0, 1], [0, 1], color="gray", lw=1, linestyle="--")
+    # Simple empirical ROC calculation to avoid sklearn dependency if not needed
+    thresholds = np.percentile(y_scores, np.linspace(0, 100, 100))
+    tpr, fpr = [], []
+    
+    pos_count = (y_true == 1).sum()
+    neg_count = (y_true == 0).sum()
+    
+    for t in thresholds:
+        tp = ((y_scores >= t) & (y_true == 1)).sum()
+        fp = ((y_scores >= t) & (y_true == 0)).sum()
+        tpr.append(tp / pos_count if pos_count > 0 else 0)
+        fpr.append(fp / neg_count if neg_count > 0 else 0)
+        
+    # Sort by FPR
+    sorted_indices = np.argsort(fpr)
+    fpr = np.array(fpr)[sorted_indices]
+    tpr = np.array(tpr)[sorted_indices]
+    
+    auc_val = np.trapz(tpr, fpr)
+    
+    plt.figure(figsize=(8, 8))
+    plt.plot(fpr, tpr, label=f"Covariance Volume - AUC: {auc_val:.4f}", color="darkorange", linewidth=2)
+    plt.plot([0, 1], [0, 1], color="navy", linestyle="--")
     plt.xlabel("False Positive Rate")
     plt.ylabel("True Positive Rate")
-    plt.title("Limb Swap Detection ROC")
-    plt.legend(loc="lower right")
-    plt.savefig(output_dir / "limb_swaps_roc.png", dpi=300, bbox_inches="tight")
+    plt.title("ROC: Detection of Severe Topological Ambiguity (Limb Swaps)")
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(output_dir / "limb_swap_roc.png", dpi=300)
     plt.close()
 
 
 def plot_catastrophic_failures(df: pd.DataFrame, output_dir: Path):
-    """Grafica la media del peso uniforme respecto al nivel de degradación."""
-    if "uniform_weight_mean" not in df.columns or "experiment_name" not in df.columns:
+    """Analiza y dibuja la tasa y peso de fallos catastróficos vs degradación."""
+    if df.empty or "uniform_weight_mean" not in df.columns or "experiment_name" not in df.columns:
         return
         
     plt.figure(figsize=(10, 6))
@@ -190,7 +221,13 @@ def plot_catastrophic_failures(df: pd.DataFrame, output_dir: Path):
     plt.close()
 
 
-def generate_all_plots(df: pd.DataFrame, output_dir: Union[str, Path]):
+def generate_all_plots(
+    df: pd.DataFrame, 
+    output_dir: Union[str, Path],
+    beta: float = 42.2103,
+    strategy: str = "max_pooling",
+    tau: float = 0.5
+):
     """Genera todas las gráficas analíticas y las guarda en output_dir."""
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -203,15 +240,15 @@ def generate_all_plots(df: pd.DataFrame, output_dir: Union[str, Path]):
     
     log.info("Generando Sparsification Plots y ECE (por visibilidad)...")
     if not df_vis.empty:
-        plot_sparsification(df_vis, output_dir, suffix="_visible")
+        plot_sparsification(df_vis, output_dir, suffix="_visible", beta=beta, strategy=strategy, tau=tau)
         plot_ece(df_vis, output_dir, suffix="_visible")
         
     if not df_occ.empty:
-        plot_sparsification(df_occ, output_dir, suffix="_occluded")
+        plot_sparsification(df_occ, output_dir, suffix="_occluded", beta=beta, strategy=strategy, tau=tau)
         plot_ece(df_occ, output_dir, suffix="_occluded")
         
     if not df_kp.empty:
-        plot_sparsification(df_kp, output_dir, suffix="_all")
+        plot_sparsification(df_kp, output_dir, suffix="_all", beta=beta, strategy=strategy, tau=tau)
         plot_ece(df_kp, output_dir, suffix="_all")
         
     df_1comp = df_kp[df_kp["n_components"] == 1]
@@ -219,11 +256,11 @@ def generate_all_plots(df: pd.DataFrame, output_dir: Union[str, Path]):
     
     log.info("Generando Sparsification Plots y ECE (por número de gaussianas)...")
     if not df_1comp.empty:
-        plot_sparsification(df_1comp, output_dir, suffix="_1_gaussian")
+        plot_sparsification(df_1comp, output_dir, suffix="_1_gaussian", beta=beta, strategy=strategy, tau=tau)
         plot_ece(df_1comp, output_dir, suffix="_1_gaussian")
         
     if not df_2comp.empty:
-        plot_sparsification(df_2comp, output_dir, suffix="_2_gaussians")
+        plot_sparsification(df_2comp, output_dir, suffix="_2_gaussians", beta=beta, strategy=strategy, tau=tau)
         plot_ece(df_2comp, output_dir, suffix="_2_gaussians")
     
     log.info("Generando Curvas ROC de Limb Swaps (global)...")
