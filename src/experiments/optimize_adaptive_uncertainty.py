@@ -160,6 +160,9 @@ def run_grid_search(input_path: Path, output_dir: Path):
     log.info("Desenrollando keypoints para optimización...")
     df_kp = _unroll_keypoints(df)
     
+    # Filtrar estrictamente puntos válidos (vis > 0) para optimización AUSE geométrica
+    df_kp = df_kp[df_kp["vis"] > 0].dropna(subset=["oks_ours", "cov_det"]).copy()
+    
     if df_kp.empty:
         log.error("No hay suficientes datos válidos en el parquet para optimizar.")
         return

@@ -27,8 +27,8 @@ def _unroll_keypoints(df: pd.DataFrame) -> pd.DataFrame:
         for kp in COCO_KEYPOINT_NAMES:
             if f"vis_{kp}" in row:
                 vis = row[f"vis_{kp}"]
-                # Ignoramos los no etiquetados (vis == 0 o NaN)
-                if pd.notna(vis) and vis > 0:
+                # Incluimos los puntos ausentes (vis == 0) para evaluación OoD, descartando solo NaN
+                if pd.notna(vis) and vis >= 0:
                     # Obtener o inferir el número de componentes (1 o 2 gaussianas)
                     if f"n_components_{kp}" in row and pd.notna(row[f"n_components_{kp}"]):
                         n_comp = int(row[f"n_components_{kp}"])
@@ -45,11 +45,12 @@ def _unroll_keypoints(df: pd.DataFrame) -> pd.DataFrame:
                         "n_components": n_comp,
                         "oks_ours": row.get(f"oks_ours_{kp}", np.nan),
                         "cov_det": row.get(f"cov_det_{kp}", np.nan),
+                        "uniform_weight": row.get(f"uniform_weight_{kp}", np.nan),
                         "base_score": row.get(f"base_score_{kp}", np.nan),
                         "heatmap_entropy": row.get(f"heatmap_entropy_{kp}", np.nan),
                     }
                     rows.append(r)
-    return pd.DataFrame(rows).dropna(subset=["oks_ours", "cov_det"])
+    return pd.DataFrame(rows).dropna(subset=["cov_det"])
 
 
 def compute_ause(df: pd.DataFrame, error_col: str, uncertainty_col: str) -> float:
@@ -81,10 +82,14 @@ def plot_sparsification(
     tau: float = 0.5
 ):
     """Genera Sparsification Plot (AUSE) a nivel de keypoint con Fusión Adaptativa."""
-    if df.empty or "cov_det" not in df.columns:
+    if df.empty or "cov_det" not in df.columns or "vis" not in df.columns:
         return
 
-    df = df.copy()
+    # Filtrar estrictamente puntos válidos (vis > 0) para evaluación geométrica OKS/AUSE
+    df = df[df["vis"] > 0].dropna(subset=["oks_ours", "cov_det"]).copy()
+    if df.empty:
+        return
+
     df["error"] = 1.0 - df["oks_ours"]
     
     ause, fractions, oracle, model = compute_ause(df, "error", "cov_det")
@@ -135,10 +140,14 @@ def plot_sparsification(
 
 def plot_ece(df: pd.DataFrame, output_dir: Path, n_bins: int = 10, suffix: str = ""):
     """Calcula y dibuja Expected Calibration Error."""
-    if df.empty or "cov_det" not in df.columns:
+    if df.empty or "cov_det" not in df.columns or "vis" not in df.columns:
         return
         
-    df = df.copy()
+    # Filtrar estrictamente puntos válidos (vis > 0) para evaluación geométrica OKS/ECE
+    df = df[df["vis"] > 0].dropna(subset=["oks_ours", "cov_det"]).copy()
+    if df.empty:
+        return
+        
     df["error"] = 1.0 - df["oks_ours"]
     
     df["unc_bin"] = pd.qcut(df["cov_det"], q=n_bins, labels=False, duplicates="drop")
@@ -221,6 +230,181 @@ def plot_catastrophic_failures(df: pd.DataFrame, output_dir: Path):
     plt.close()
 
 
+def plot_ood_absence_roc(df: pd.DataFrame, output_dir: Path, suffix: str = ""):
+    """
+    Evaluación Cuantitativa OoD / Anomaly Detection: AUROC de Detección de Ausencia.
+    Clasificación binaria: vis == 0 (anomalía, positivo=1) vs vis > 0 (normal, negativo=0).
+    """
+    if df.empty or "vis" not in df.columns:
+        return
+        
+    df_valid = df[df["vis"].notna()].copy()
+    y_true = (df_valid["vis"] == 0).astype(int)
+    
+    if y_true.nunique() < 2 or y_true.sum() == 0 or (1 - y_true).sum() == 0:
+        log.info(f"No hay suficientes muestras de ambas clases (vis == 0 y vis > 0) para ROC OoD{suffix}.")
+        return
+
+    predictors = [
+        ("cov_det", r"GMM $\det(\Sigma_{final})$", "blue"),
+        ("uniform_weight", r"GMM $\pi_{uniforme}$", "darkorange"),
+        ("heatmap_entropy", "Baseline Heatmap Entropy", "green"),
+        ("inv_base_score", r"Baseline $1 - P_{argmax}$", "red")
+    ]
+    
+    plt.figure(figsize=(8, 8))
+    
+    for col, label, color in predictors:
+        if col == "inv_base_score":
+            if "base_score" in df_valid.columns:
+                scores = 1.0 - df_valid["base_score"]
+            else:
+                continue
+        elif col in df_valid.columns:
+            scores = df_valid[col]
+        else:
+            continue
+            
+        mask = ~scores.isna()
+        if mask.sum() == 0 or y_true[mask].nunique() < 2:
+            continue
+            
+        fpr, tpr, _ = roc_curve(y_true[mask], scores[mask])
+        roc_auc = auc(fpr, tpr)
+        plt.plot(fpr, tpr, label=f"{label} (AUC = {roc_auc:.4f})", color=color, linewidth=2)
+        
+    plt.plot([0, 1], [0, 1], color="gray", linestyle="--", linewidth=1, label="Random Guess (AUC = 0.5000)")
+    plt.xlabel("False Positive Rate (FPR)")
+    plt.ylabel("True Positive Rate (TPR)")
+    title_suffix = suffix.replace("_", " ").title()
+    plt.title(f"OoD Absence Detection ROC{title_suffix.strip()}: vis == 0 vs vis > 0")
+    plt.legend(loc="lower right")
+    plt.tight_layout()
+    plt.savefig(output_dir / f"ood_absence_roc{suffix}.png", dpi=300)
+    plt.close()
+
+
+def plot_ood_absence_kde(df: pd.DataFrame, output_dir: Path, suffix: str = ""):
+    """
+    Evaluación Cualitativa OoD / Anomaly Detection: Diagramas de Densidad (KDE plots).
+    Compara las distribuciones de incertidumbre para articulaciones presentes (vis > 0) vs ausentes (vis == 0).
+    """
+    if df.empty or "vis" not in df.columns:
+        return
+        
+    df_valid = df[df["vis"].notna()].copy()
+    y_true = (df_valid["vis"] == 0).astype(int)
+    
+    if y_true.nunique() < 2 or y_true.sum() == 0 or (1 - y_true).sum() == 0:
+        log.info(f"No hay suficientes muestras de ambas clases para KDE OoD{suffix}.")
+        return
+
+    df_valid["Presence"] = np.where(df_valid["vis"] == 0, "Absent / OoD (vis == 0)", "Present (vis > 0)")
+    
+    if "cov_det" in df_valid.columns:
+        df_valid["log_cov_det"] = np.log1p(np.maximum(df_valid["cov_det"], 0.0))
+    if "base_score" in df_valid.columns:
+        df_valid["inv_base_score"] = 1.0 - df_valid["base_score"]
+        
+    predictors = [
+        ("log_cov_det", r"GMM $\log(1 + \det(\Sigma_{final}))$"),
+        ("uniform_weight", r"GMM $\pi_{uniforme}$"),
+        ("heatmap_entropy", "Baseline Heatmap Entropy"),
+        ("inv_base_score", r"Baseline $1 - P_{argmax}$")
+    ]
+    
+    palette = {
+        "Present (vis > 0)": "#1f77b4",       # Azul para normales
+        "Absent / OoD (vis == 0)": "#d62728"  # Rojo para anomalías / OoD
+    }
+    
+    # 1. Gráfica combinada en cuadrícula 2x2
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    axes = axes.flatten()
+    
+    for i, (col, label) in enumerate(predictors):
+        ax = axes[i]
+        if col not in df_valid.columns or df_valid[col].isna().all():
+            ax.set_title(f"{label} (Not Available)")
+            continue
+            
+        df_plot = df_valid.dropna(subset=[col, "Presence"])
+        if df_plot.empty:
+            continue
+            
+        try:
+            sns.kdeplot(
+                data=df_plot, 
+                x=col, 
+                hue="Presence", 
+                fill=True, 
+                common_norm=False, 
+                palette=palette, 
+                alpha=0.4, 
+                linewidth=2, 
+                ax=ax
+            )
+        except Exception as e:
+            log.debug(f"KDE falló para {col}, usando histplot de respaldo: {e}")
+            sns.histplot(
+                data=df_plot, 
+                x=col, 
+                hue="Presence", 
+                stat="density", 
+                common_norm=False, 
+                palette=palette, 
+                alpha=0.4, 
+                ax=ax
+            )
+            
+        ax.set_xlabel(label)
+        ax.set_ylabel("Density")
+        ax.set_title(f"Density Distribution: {label}")
+        
+    title_suffix = suffix.replace("_", " ").title()
+    fig.suptitle(f"OoD Absence Detection (KDE Distributions){title_suffix.strip()}", fontsize=16, y=1.02)
+    plt.tight_layout()
+    plt.savefig(output_dir / f"ood_absence_kde_grid{suffix}.png", dpi=300, bbox_inches="tight")
+    plt.close()
+    
+    # 2. Guardar también gráficas individuales de alta resolución
+    for col, label in predictors:
+        if col not in df_valid.columns or df_valid[col].isna().all():
+            continue
+        df_plot = df_valid.dropna(subset=[col, "Presence"])
+        if df_plot.empty:
+            continue
+            
+        plt.figure(figsize=(8, 6))
+        try:
+            sns.kdeplot(
+                data=df_plot, 
+                x=col, 
+                hue="Presence", 
+                fill=True, 
+                common_norm=False, 
+                palette=palette, 
+                alpha=0.4, 
+                linewidth=2
+            )
+        except Exception:
+            sns.histplot(
+                data=df_plot, 
+                x=col, 
+                hue="Presence", 
+                stat="density", 
+                common_norm=False, 
+                palette=palette, 
+                alpha=0.4
+            )
+        plt.xlabel(label)
+        plt.ylabel("Density")
+        plt.title(f"OoD Density Comparison: {label}{title_suffix.strip()}")
+        plt.tight_layout()
+        plt.savefig(output_dir / f"ood_absence_kde_{col}{suffix}.png", dpi=300)
+        plt.close()
+
+
 def generate_all_plots(
     df: pd.DataFrame, 
     output_dir: Union[str, Path],
@@ -234,6 +418,11 @@ def generate_all_plots(
     
     log.info("Desenrollando DataFrame por keypoints...")
     df_kp = _unroll_keypoints(df)
+    
+    # Análisis de Detección de Anomalías / Out-of-Distribution (OoD) para vis == 0
+    log.info("Generando Análisis OoD de Detección de Ausencia (ROC y KDE)...")
+    plot_ood_absence_roc(df_kp, output_dir, suffix="_all")
+    plot_ood_absence_kde(df_kp, output_dir, suffix="_all")
     
     df_vis = df_kp[df_kp["vis"] == 2]
     df_occ = df_kp[df_kp["vis"] == 1]
@@ -258,10 +447,14 @@ def generate_all_plots(
     if not df_1comp.empty:
         plot_sparsification(df_1comp, output_dir, suffix="_1_gaussian", beta=beta, strategy=strategy, tau=tau)
         plot_ece(df_1comp, output_dir, suffix="_1_gaussian")
+        plot_ood_absence_roc(df_1comp, output_dir, suffix="_1_gaussian")
+        plot_ood_absence_kde(df_1comp, output_dir, suffix="_1_gaussian")
         
     if not df_2comp.empty:
         plot_sparsification(df_2comp, output_dir, suffix="_2_gaussians", beta=beta, strategy=strategy, tau=tau)
         plot_ece(df_2comp, output_dir, suffix="_2_gaussians")
+        plot_ood_absence_roc(df_2comp, output_dir, suffix="_2_gaussians")
+        plot_ood_absence_kde(df_2comp, output_dir, suffix="_2_gaussians")
     
     log.info("Generando Curvas ROC de Limb Swaps (global)...")
     plot_limb_swap_roc(df, output_dir)
