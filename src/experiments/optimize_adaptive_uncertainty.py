@@ -1,3 +1,4 @@
+import json
 import argparse
 import logging
 import sys
@@ -207,13 +208,68 @@ def run_grid_search(input_path: Path, output_dir: Path):
     print(f"  -> Mejor Beta: {res_all['gating_tau']['beta']:.6g} | Mejor Tau: {res_all['gating_tau']['tau']:.4f}")
     print(f"  -> AUSE Óptimo: {res_all['gating_tau']['ause']:.5f} (Mejora: {res_all['baseline_argmax_ause'] - res_all['gating_tau']['ause']:.5f})")
     print("="*70 + "\n")
+    
+    def _extract_clean_summary(res: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "baseline_argmax_ause": float(res["baseline_argmax_ause"]),
+            "baseline_gmm_raw_ause": float(res["baseline_gmm_raw_ause"]),
+            "max_pooling": {
+                "best_beta": float(res["max_pooling"]["beta"]),
+                "best_ause": float(res["max_pooling"]["ause"]),
+                "ause_improvement": float(res["baseline_argmax_ause"] - res["max_pooling"]["ause"])
+            },
+            "gating_k": {
+                "best_beta": float(res["gating_k"]["beta"]),
+                "best_ause": float(res["gating_k"]["ause"]),
+                "ause_improvement": float(res["baseline_argmax_ause"] - res["gating_k"]["ause"])
+            },
+            "gating_tau": {
+                "best_beta": float(res["gating_tau"]["beta"]),
+                "best_tau": float(res["gating_tau"]["tau"]),
+                "best_ause": float(res["gating_tau"]["ause"]),
+                "ause_improvement": float(res["baseline_argmax_ause"] - res["gating_tau"]["ause"])
+            }
+        }
+        
+    summary_results = {
+        "all": _extract_clean_summary(res_all)
+    }
+    if not df_vis.empty and "res_vis" in locals():
+        summary_results["visible"] = _extract_clean_summary(res_vis)
+    if not df_occ.empty and "res_occ" in locals():
+        summary_results["occluded"] = _extract_clean_summary(res_occ)
+        
+    json_path = output_dir / "optimization_results.json"
+    with open(json_path, "w", encoding="utf-8") as f:
+        json.dump(summary_results, f, indent=2, ensure_ascii=False)
+        
+    csv_rows = []
+    for subset_name, sub_res in summary_results.items():
+        csv_rows.append({"subset": subset_name, "strategy": "baseline_argmax", "metric": "ause", "value": sub_res["baseline_argmax_ause"]})
+        csv_rows.append({"subset": subset_name, "strategy": "baseline_gmm_raw", "metric": "ause", "value": sub_res["baseline_gmm_raw_ause"]})
+        for strat_name in ["max_pooling", "gating_k", "gating_tau"]:
+            for m_key, m_val in sub_res[strat_name].items():
+                csv_rows.append({"subset": subset_name, "strategy": strat_name, "metric": m_key, "value": m_val})
+                
+    if csv_rows:
+        df_csv = pd.DataFrame(csv_rows)
+        csv_path = output_dir / "optimization_results.csv"
+        df_csv.to_csv(csv_path, index=False, encoding="utf-8")
+        log.info(f"Resultados de optimización guardados en {json_path} y {csv_path}")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Grid-Search para optimizar hiperparámetro beta en incertidumbre adaptativa.")
     parser.add_argument("input_path", type=str, help="Ruta al archivo parquet (o directorio con parquets) del benchmark.")
-    parser.add_argument("--out", type=str, default="outputs/adaptive_optimization", help="Directorio para guardar gráficas de optimización.")
+    parser.add_argument("--out", type=str, default=None, help="Directorio para guardar gráficas de optimización (por defecto auto-detectado en graficas/).")
     args = parser.parse_args()
     
     logging.basicConfig(level=logging.INFO)
-    run_grid_search(Path(args.input_path), Path(args.out))
+    input_path = Path(args.input_path)
+    
+    from src.experiments.degradation_organizer import run_organized_optimization_pipeline
+    if run_organized_optimization_pipeline(input_path, out_arg=args.out):
+        sys.exit(0)
+        
+    out_dir = Path(args.out) if args.out else Path("outputs/adaptive_optimization")
+    run_grid_search(input_path, out_dir)

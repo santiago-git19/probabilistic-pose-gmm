@@ -4,7 +4,7 @@ Benchmark de Degradación y Evaluación de Incertidumbre
 Este script:
 1. Ejecuta iterativamente el modelo bajo niveles incrementales de degradación sintética (ruido, blur, contraste).
 2. Recolecta las métricas GMM ($\Sigma$, $W_2^2$, $D_{KL}$, $\pi_{uniforme}$) para cada imagen y articulación.
-3. Al finalizar, invoca a `evaluate_uncertainty.py` para generar AUSE, ECE, ROC y analizar fallos catastróficos.
+3. Al finalizar, invoca los pipelines organizados de `evaluate_uncertainty.py` y `optimize_adaptive_uncertainty.py` para generar AUSE, ECE, OoD ROC, optimización beta y tablas CSV/JSON unificadas.
 """
 
 import sys
@@ -23,7 +23,7 @@ sys.path.insert(0, str(_PROJECT_ROOT))
 
 from src.pose_uncertainty.evaluation.runner import EvaluationRunner, _build_dataloader
 from src.pose_uncertainty.models.adapters import create_model_adapter
-from src.experiments.evaluate_uncertainty import generate_all_plots
+from src.experiments.degradation_organizer import run_organized_evaluation_pipeline, run_organized_optimization_pipeline
 
 log = logging.getLogger(__name__)
 
@@ -44,10 +44,7 @@ DEGRADATION_EXPERIMENTS = {
     },
     "04_Resize_Extreme": {
         "dataset.resize_scale": 0.05,
-    },
-    "05_Resize_Catastrophic": {
-        "dataset.resize_scale": 0.01,
-    },
+    }
 }
 
 @hydra.main(config_path="../../configs", config_name="config", version_base="1.2")
@@ -113,9 +110,18 @@ def main(cfg: DictConfig) -> None:
     combined_parquet = base_out_dir / "all_degradations_combined.parquet"
     combined_df.to_parquet(combined_parquet, index=False)
     
-    log.info("Ejecución finalizada. Generando gráficas de incertidumbre y diagnósticos...")
-    generate_all_plots(combined_df, base_out_dir)
-    log.info("Proceso completado exitosamente.")
+    log.info("Ejecución finalizada. Organizando y ejecutando evaluación exhaustiva y optimización adaptativa...")
+    beta = OmegaConf.select(cfg, "adaptive_uncertainty.beta", default=42.2103)
+    strategy = OmegaConf.select(cfg, "adaptive_uncertainty.strategy", default="max_pooling")
+    tau = OmegaConf.select(cfg, "adaptive_uncertainty.tau", default=0.5)
+    
+    log.info("--> 1/2: Ejecutando pipeline de evaluación (evaluate_uncertainty)...")
+    run_organized_evaluation_pipeline(base_out_dir, beta=beta, strategy=strategy, tau=tau)
+    
+    log.info("--> 2/2: Ejecutando pipeline de optimización (optimize_adaptive_uncertainty)...")
+    run_organized_optimization_pipeline(base_out_dir)
+    
+    log.info(f"¡Proceso completado exitosamente! Todas las gráficas y archivos maestros CSV/JSON organizados en: {base_out_dir / 'graficas'}")
 
 if __name__ == "__main__":
     main()
