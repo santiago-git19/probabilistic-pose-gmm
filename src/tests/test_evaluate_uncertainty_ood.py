@@ -96,3 +96,5 @@ def test_generate_all_plots_ood_integration(sample_image_df, tmp_path):
     
     assert (tmp_path / "ood_absence_roc_all.png").exists()
     assert (tmp_path / "ood_absence_kde_grid_all.png").exists()
+    assert (tmp_path / "evaluation_metrics.json").exists()
+    assert (tmp_path / "evaluation_metrics.csv").exists()
