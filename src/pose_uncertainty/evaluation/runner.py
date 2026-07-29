@@ -445,6 +445,7 @@ class EvaluationRunner:
         ours_coords = np.zeros((num_kp, 2), dtype=np.float32)
         ours_scores = np.zeros(num_kp, dtype=np.float32)
 
+        seed_val = int(self.sampling_cfg.get("seed", 42))
         for k in range(num_kp):
             hm_k = heatmap_avg[k]
             try:
@@ -454,7 +455,7 @@ class EvaluationRunner:
                     strategy=self.sampling_cfg.get("method", "rejection"),
                     temperature=float(self.sampling_cfg.get("temperature", 0.1)),
                     use_dequantization=bool(self.sampling_cfg.get("use_dequantization", True)),
-                    seed=self.sampling_cfg.get("seed", 42),
+                    seed=seed_val + k,  # Add k to avoid identical PRNG sequence across keypoints
                 )
                 mixture_res = select_best_model(
                     samples.astype(np.float64),
@@ -465,6 +466,7 @@ class EvaluationRunner:
                     tol=float(self.mixture_cfg.get("convergence_threshold", 1e-4)),
                     decode_strategy=str(self.mixture_cfg.get("decode_strategy", "argmax")),
                     variance_threshold=float(self.mixture_cfg.get("variance_filter_threshold", 3.0)),
+                    random_state=seed_val + k,
                 )
                 gmm_results.append(mixture_res)
                 ours_coords[k] = mixture_res.best_mean.astype(np.float32)
@@ -945,6 +947,9 @@ class EvaluationRunner:
         n_comp_total = 0
         gmm_results: List[MixtureResult] = []
 
+        # Seed for reproducibility
+        seed_val = int(self.sampling_cfg.get("seed", 42))
+
         for k in range(num_kp):
             hm_k = heatmap_avg[k]
             try:
@@ -954,7 +959,7 @@ class EvaluationRunner:
                     strategy=self.sampling_cfg.get("method", "rejection"),
                     temperature=float(self.sampling_cfg.get("temperature", 0.1)),
                     use_dequantization=bool(self.sampling_cfg.get("use_dequantization", True)),
-                    seed=self.sampling_cfg.get("seed", 42),
+                    seed=seed_val + k,
                 )
                 all_sampling_points.append(samples)
                 sampling_points_by_kp.append(samples.astype(np.float32))
@@ -968,6 +973,7 @@ class EvaluationRunner:
                     tol=float(self.mixture_cfg.get("convergence_threshold", 1e-4)),
                     decode_strategy=str(self.mixture_cfg.get("decode_strategy", "argmax")),
                     variance_threshold=float(self.mixture_cfg.get("variance_filter_threshold", 3.0)),
+                    random_state=seed_val + k,
                 )
                 gmm_results.append(mixture_res)
                 ours_coords[k] = mixture_res.best_mean.astype(np.float32)
