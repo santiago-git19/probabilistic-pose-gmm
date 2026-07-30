@@ -96,6 +96,7 @@ def plot_sparsification(
     ause, fractions, oracle, model = compute_ause(df, "error", "cov_det")
     ause_mp = None
     ause_gate = None
+    ause_softmax = None
     ause_base = None
     ause_ent = None
     
@@ -123,6 +124,16 @@ def plot_sparsification(
         df["u_adapt_gate"] = np.where(cond, u_gmm, u_base)
         ause_gate, _, _, model_gate = compute_ause(df, "error", "u_adapt_gate")
         plt.plot(fractions, model_gate, label=f"Adaptive (Gating K=2) - AUSE: {ause_gate:.4f}", color="cyan", linewidth=2)
+        
+        # Estrategia C: Softmax Ponderado
+        exp_u_base = np.exp(u_base)
+        exp_u_gmm = np.exp(u_gmm)
+        sum_exp = exp_u_base + exp_u_gmm
+        w_base = exp_u_base / sum_exp
+        w_gmm = exp_u_gmm / sum_exp
+        df["u_adapt_softmax"] = w_base * u_base + w_gmm * u_gmm
+        ause_softmax, _, _, model_softmax = compute_ause(df, "error", "u_adapt_softmax")
+        plt.plot(fractions, model_softmax, label=f"Adaptive (Softmax) - AUSE: {ause_softmax:.4f}", color="orange", linewidth=2)
     
     if "base_score" in df.columns and not df["base_score"].isna().all():
         df["inv_base_score"] = -df["base_score"]
@@ -146,6 +157,7 @@ def plot_sparsification(
         "ause_gmm_raw": float(ause),
         "ause_adaptive_max_pooling": float(ause_mp) if ause_mp is not None else None,
         "ause_adaptive_gating": float(ause_gate) if ause_gate is not None else None,
+        "ause_adaptive_softmax": float(ause_softmax) if ause_softmax is not None else None,
         "ause_baseline_argmax": float(ause_base) if ause_base is not None else None,
         "ause_baseline_entropy": float(ause_ent) if ause_ent is not None else None,
     }

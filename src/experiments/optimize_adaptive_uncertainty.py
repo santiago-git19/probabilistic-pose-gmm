@@ -70,6 +70,7 @@ def optimize_strategies(
     best_max_pool = {"beta": None, "ause": float("inf"), "history": []}
     best_gating_k = {"beta": None, "ause": float("inf"), "history": []}
     best_gating_tau = {"beta": None, "tau": None, "ause": float("inf")}
+    best_softmax = {"beta": None, "ause": float("inf"), "history": []}
     
     log.info(f"Evaluando {len(beta_candidates)} candidatos de beta...")
     
@@ -104,12 +105,26 @@ def optimize_strategies(
                 best_gating_tau["beta"] = beta
                 best_gating_tau["tau"] = tau
 
+        # --- Estrategia C: Softmax Ponderado ---
+        exp_u_base = np.exp(u_base)
+        exp_u_gmm = np.exp(u_gmm)
+        sum_exp = exp_u_base + exp_u_gmm
+        w_base = exp_u_base / sum_exp
+        w_gmm = exp_u_gmm / sum_exp
+        u_softmax = w_base * u_base + w_gmm * u_gmm
+        ause_softmax = compute_ause_fast(error, u_softmax)
+        best_softmax["history"].append(ause_softmax)
+        if ause_softmax < best_softmax["ause"]:
+            best_softmax["ause"] = ause_softmax
+            best_softmax["beta"] = beta
+
     return {
         "baseline_argmax_ause": ause_base,
         "baseline_gmm_raw_ause": ause_gmm_raw,
         "max_pooling": best_max_pool,
         "gating_k": best_gating_k,
         "gating_tau": best_gating_tau,
+        "softmax": best_softmax,
         "beta_candidates": beta_candidates
     }
 
@@ -119,12 +134,14 @@ def plot_optimization_curves(results: Dict[str, Any], output_dir: Path, suffix: 
     betas = results["beta_candidates"]
     mp_hist = results["max_pooling"]["history"]
     gk_hist = results["gating_k"]["history"]
+    sm_hist = results["softmax"]["history"]
     base_ause = results["baseline_argmax_ause"]
     gmm_raw_ause = results["baseline_gmm_raw_ause"]
     
     plt.figure(figsize=(10, 6))
     plt.semilogx(betas, mp_hist, label=f"Estrategia A (Max-Pooling) - Mejor AUSE: {results['max_pooling']['ause']:.4f}", color="magenta", linewidth=2)
     plt.semilogx(betas, gk_hist, label=f"Estrategia B (Gating K=2) - Mejor AUSE: {results['gating_k']['ause']:.4f}", color="cyan", linewidth=2)
+    plt.semilogx(betas, sm_hist, label=f"Estrategia C (Softmax) - Mejor AUSE: {results['softmax']['ause']:.4f}", color="orange", linewidth=2)
     
     plt.axhline(base_ause, color="red", linestyle="--", label=f"Baseline Argmax AUSE: {base_ause:.4f}")
     plt.axhline(gmm_raw_ause, color="blue", linestyle=":", label=f"GMM det(Sigma) Raw AUSE: {gmm_raw_ause:.4f}")
@@ -132,6 +149,7 @@ def plot_optimization_curves(results: Dict[str, Any], output_dir: Path, suffix: 
     # Marcar los puntos óptimos
     plt.scatter([results['max_pooling']['beta']], [results['max_pooling']['ause']], color="magenta", s=80, zorder=5)
     plt.scatter([results['gating_k']['beta']], [results['gating_k']['ause']], color="cyan", s=80, zorder=5)
+    plt.scatter([results['softmax']['beta']], [results['softmax']['ause']], color="orange", s=80, zorder=5)
     
     plt.xlabel(r"Hiperparámetro de Sensibilidad $\beta$ (escala logarítmica)")
     plt.ylabel("Area Under Sparsification Error (AUSE - menor es mejor)")
@@ -207,6 +225,10 @@ def run_grid_search(input_path: Path, output_dir: Path):
     print("ESTRATEGIA B2 (Gating Híbrido K=2 o U_gmm > tau):")
     print(f"  -> Mejor Beta: {res_all['gating_tau']['beta']:.6g} | Mejor Tau: {res_all['gating_tau']['tau']:.4f}")
     print(f"  -> AUSE Óptimo: {res_all['gating_tau']['ause']:.5f} (Mejora: {res_all['baseline_argmax_ause'] - res_all['gating_tau']['ause']:.5f})")
+    print("-" * 70)
+    print("ESTRATEGIA C (Softmax Ponderado):")
+    print(f"  -> Mejor Beta: {res_all['softmax']['beta']:.6g}")
+    print(f"  -> AUSE Óptimo: {res_all['softmax']['ause']:.5f} (Mejora: {res_all['baseline_argmax_ause'] - res_all['softmax']['ause']:.5f})")
     print("="*70 + "\n")
     
     def _extract_clean_summary(res: Dict[str, Any]) -> Dict[str, Any]:
@@ -228,6 +250,11 @@ def run_grid_search(input_path: Path, output_dir: Path):
                 "best_tau": float(res["gating_tau"]["tau"]),
                 "best_ause": float(res["gating_tau"]["ause"]),
                 "ause_improvement": float(res["baseline_argmax_ause"] - res["gating_tau"]["ause"])
+            },
+            "softmax": {
+                "best_beta": float(res["softmax"]["beta"]),
+                "best_ause": float(res["softmax"]["ause"]),
+                "ause_improvement": float(res["baseline_argmax_ause"] - res["softmax"]["ause"])
             }
         }
         
@@ -247,7 +274,7 @@ def run_grid_search(input_path: Path, output_dir: Path):
     for subset_name, sub_res in summary_results.items():
         csv_rows.append({"subset": subset_name, "strategy": "baseline_argmax", "metric": "ause", "value": sub_res["baseline_argmax_ause"]})
         csv_rows.append({"subset": subset_name, "strategy": "baseline_gmm_raw", "metric": "ause", "value": sub_res["baseline_gmm_raw_ause"]})
-        for strat_name in ["max_pooling", "gating_k", "gating_tau"]:
+        for strat_name in ["max_pooling", "gating_k", "gating_tau", "softmax"]:
             for m_key, m_val in sub_res[strat_name].items():
                 csv_rows.append({"subset": subset_name, "strategy": strat_name, "metric": m_key, "value": m_val})
                 
