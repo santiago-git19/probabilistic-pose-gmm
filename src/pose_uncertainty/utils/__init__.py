@@ -9,4 +9,4 @@ This subpackage provides:
 
 from typing import List
 
-__all__: List[str] = ["types", "geometry", "metrics"]
+__all__: List[str] = ["types", "metrics"]
