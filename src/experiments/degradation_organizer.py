@@ -70,7 +70,10 @@ def prefix_folder_files(subfolder: Path, prefix: str):
     for file_path in list(subfolder.iterdir()):
         if file_path.is_file() and not file_path.name.startswith(f"{prefix}_"):
             new_name = f"{prefix}_{file_path.name}"
-            file_path.rename(subfolder / new_name)
+            target_path = subfolder / new_name
+            if target_path.exists():
+                target_path.unlink()
+            file_path.rename(target_path)
 
 
 def organize_metric_folders_and_masters(graficas_dir: Path):

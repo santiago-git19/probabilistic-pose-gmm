@@ -78,7 +78,7 @@ def plot_sparsification(
     df: pd.DataFrame, 
     output_dir: Path, 
     suffix: str = "",
-    beta: float = 0.012,
+    beta: float = 0.1,
     strategy: str = "max_pooling",
     tau: float = 0.5
 ):
@@ -460,7 +460,7 @@ def plot_ood_absence_kde(df: pd.DataFrame, output_dir: Path, suffix: str = ""):
 def generate_all_plots(
     df: pd.DataFrame, 
     output_dir: Union[str, Path],
-    beta: float = 42.2103,
+    beta: float = 0.1,
     strategy: str = "max_pooling",
     tau: float = 0.5
 ):
@@ -557,7 +557,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Evaluar incertidumbre desde archivos parquet.")
     parser.add_argument("input_path", type=str, help="Ruta al archivo parquet o directorio.")
     parser.add_argument("--out", type=str, default=".", help="Directorio de salida para gráficas.")
-    parser.add_argument("--beta", type=float, default=42.2103, help="Hiperparámetro beta para incertidumbre adaptativa.")
+    parser.add_argument("--beta", type=float, default=0.1, help="Hiperparámetro beta para incertidumbre adaptativa.")
     parser.add_argument("--strategy", type=str, default="max_pooling", help="Estrategia adaptativa (max_pooling, gating_k, etc.)")
     parser.add_argument("--tau", type=float, default=0.5, help="Umbral tau para estrategia gating_tau.")
     args = parser.parse_args()

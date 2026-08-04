@@ -37,13 +37,13 @@ DEGRADATION_EXPERIMENTS = {
         "dataset.resize_scale": 0.5,
     },
     "02_Resize_Medium": {
-        "dataset.resize_scale": 0.3,
+        "dataset.resize_scale": 0.25,
     },
     "03_Resize_High": {
-        "dataset.resize_scale": 0.1,
+        "dataset.resize_scale": 0.125,
     },
     "04_Resize_Extreme": {
-        "dataset.resize_scale": 0.05,
+        "dataset.resize_scale": 0.0625,
     }
 }
 
