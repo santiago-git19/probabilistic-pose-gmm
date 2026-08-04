@@ -173,14 +173,15 @@ def check_limb_swaps(
     visible_flags: npt.NDArray[np.int32],
     area: float,
     sigmas: Optional[npt.NDArray[np.float32]] = None,
-    flip_pairs: Optional[List[tuple[int, int]]] = None
+    flip_pairs: Optional[List[tuple[int, int]]] = None,
+    margin: float = 0.0
 ) -> npt.NDArray[np.bool_]:
     """
     Check which symmetric pairs suffer from a limb swap.
     
     A limb swap occurs if a predicted keypoint is a better match (in terms of OKS)
     for the contralateral (opposite) ground truth keypoint than for the ipsilateral 
-    (correct) ground truth keypoint, AND the swapped OKS is reasonably high (>0.3)
+    (correct) ground truth keypoint by at least `margin`, AND the swapped OKS is reasonably high (>0.3)
     to avoid counting random noise.
     
     Args:
@@ -190,6 +191,7 @@ def check_limb_swaps(
         area: Bounding box area for scale normalization.
         sigmas: Per-keypoint standard deviations. Defaults to COCO_SIGMAS.
         flip_pairs: List of symmetric keypoint pairs.
+        margin: The required difference in OKS to consider it a swap.
         
     Returns:
         Boolean array of shape (len(flip_pairs),) where True means the pair is swapped.
@@ -223,9 +225,9 @@ def check_limb_swaps(
             oks_l_r = single_kp_oks(l, r, r)
             oks_r_l = single_kp_oks(r, l, l)
             
-            # A keypoint is swapped if it's much better assigned to the other side (at least 0.1 OKS difference)
-            is_l_swapped = (oks_l_r > oks_l_l + 0.7) and (oks_l_r > 0.7)
-            is_r_swapped = (oks_r_l > oks_r_r + 0.7) and (oks_r_l > 0.7)
+            # A keypoint is swapped if it's better assigned to the other side by at least `margin`
+            is_l_swapped = (oks_l_r > oks_l_l + margin) and (oks_l_r > 0.3)
+            is_r_swapped = (oks_r_l > oks_r_r + margin) and (oks_r_l > 0.3)
             
             # If at least one limb of the pair is swapped, count it as a swapped pair
             if is_l_swapped or is_r_swapped:

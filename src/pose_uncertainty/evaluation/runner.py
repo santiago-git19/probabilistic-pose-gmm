@@ -564,9 +564,9 @@ class EvaluationRunner:
 
         oks_tta, per_kp_oks_tta = compute_oks(tta_coords[:, :2], gt_coords, vis, area)
         
-        swaps_base_arr = check_limb_swaps(base_coords_2d, gt_coords, vis, area)
-        swaps_ours_arr = check_limb_swaps(ours_coords[:, :2], gt_coords, vis, area)
-        swaps_tta_arr = check_limb_swaps(tta_coords[:, :2], gt_coords, vis, area)
+        swaps_base_arr = check_limb_swaps(base_coords_2d, gt_coords, vis, area, margin=0.0)
+        swaps_ours_arr = check_limb_swaps(ours_coords[:, :2], gt_coords, vis, area, margin=0.0)
+        swaps_tta_arr = check_limb_swaps(tta_coords[:, :2], gt_coords, vis, area, margin=0.0)
         
         swaps_base = int(np.sum(swaps_base_arr))
         swaps_ours = int(np.sum(swaps_ours_arr))
@@ -575,6 +575,18 @@ class EvaluationRunner:
         swaps_introduced = int(np.sum(~swaps_base_arr & swaps_ours_arr))
         swaps_corrected_tta = int(np.sum(swaps_base_arr & ~swaps_tta_arr))
         swaps_introduced_tta = int(np.sum(~swaps_base_arr & swaps_tta_arr))
+        
+        swaps_base_arr_strict = check_limb_swaps(base_coords_2d, gt_coords, vis, area, margin=0.7)
+        swaps_ours_arr_strict = check_limb_swaps(ours_coords[:, :2], gt_coords, vis, area, margin=0.7)
+        swaps_tta_arr_strict = check_limb_swaps(tta_coords[:, :2], gt_coords, vis, area, margin=0.7)
+        
+        swaps_base_strict = int(np.sum(swaps_base_arr_strict))
+        swaps_ours_strict = int(np.sum(swaps_ours_arr_strict))
+        swaps_tta_strict = int(np.sum(swaps_tta_arr_strict))
+        swaps_corrected_strict = int(np.sum(swaps_base_arr_strict & ~swaps_ours_arr_strict))
+        swaps_introduced_strict = int(np.sum(~swaps_base_arr_strict & swaps_ours_arr_strict))
+        swaps_corrected_tta_strict = int(np.sum(swaps_base_arr_strict & ~swaps_tta_arr_strict))
+        swaps_introduced_tta_strict = int(np.sum(~swaps_base_arr_strict & swaps_tta_arr_strict))
         
         delta_oks = oks_ours - oks_base
         delta_oks_tta = oks_tta - oks_base
@@ -593,6 +605,7 @@ class EvaluationRunner:
         kl_div_kp = np.zeros(num_kp, dtype=np.float32)
         cov_det_kp = np.zeros(num_kp, dtype=np.float32)
         n_components_kp = np.zeros(num_kp, dtype=np.int32)
+        gaussian_weights_kp = [[] for _ in range(num_kp)]
         
         # Prepare reference heatmap for coordinate transformations if needed
         ref_hm_for_trans = locals().get('ref_hm', None)
@@ -619,6 +632,7 @@ class EvaluationRunner:
             m = np.array([c.mean for c in mr.components], dtype=np.float32)
             all_weights.append(w)
             all_covs.append(c)
+            gaussian_weights_kp[k] = w.tolist()
             
             # Transform means and covariances to image space using MMPoseAdapter
             if ref_hm_for_trans is not None:
@@ -734,6 +748,13 @@ class EvaluationRunner:
             "swaps_introduced": swaps_introduced,
             "swaps_corrected_tta": swaps_corrected_tta,
             "swaps_introduced_tta": swaps_introduced_tta,
+            "swaps_base_strict": swaps_base_strict,
+            "swaps_ours_strict": swaps_ours_strict,
+            "swaps_tta_strict": swaps_tta_strict,
+            "swaps_corrected_strict": swaps_corrected_strict,
+            "swaps_introduced_strict": swaps_introduced_strict,
+            "swaps_corrected_tta_strict": swaps_corrected_tta_strict,
+            "swaps_introduced_tta_strict": swaps_introduced_tta_strict,
             "nll": float(nll_val),
             "entropy": float(entropy_val),
             "covariance_vol": float(cov_vol),
@@ -757,6 +778,7 @@ class EvaluationRunner:
                 metrics_dict[f"base_score_{kp_name}"] = float(base_scores[i]) if i < len(base_scores) else None
                 metrics_dict[f"heatmap_entropy_{kp_name}"] = float(heatmap_entropy_kp[i])
                 metrics_dict[f"n_components_{kp_name}"] = int(n_components_kp[i])
+                metrics_dict[f"gaussian_weights_{kp_name}"] = gaussian_weights_kp[i]
                 metrics_dict[f"vis_{kp_name}"] = int(vis[i]) if i < len(vis) else 0
                 
         metrics_dict["swaps_ours_arr"] = [bool(s) for s in swaps_ours_arr]
@@ -1053,13 +1075,21 @@ class EvaluationRunner:
 
         oks_ours, per_kp_oks_ours = compute_oks(ours_coords[:, :2], gt_coords, vis, area)
         
-        swaps_base_arr = check_limb_swaps(base_coords_2d, gt_coords, vis, area)
-        swaps_ours_arr = check_limb_swaps(ours_coords[:, :2], gt_coords, vis, area)
+        swaps_base_arr = check_limb_swaps(base_coords_2d, gt_coords, vis, area, margin=0.0)
+        swaps_ours_arr = check_limb_swaps(ours_coords[:, :2], gt_coords, vis, area, margin=0.0)
         
         swaps_base = int(np.sum(swaps_base_arr))
         swaps_ours = int(np.sum(swaps_ours_arr))
         swaps_corrected = int(np.sum(swaps_base_arr & ~swaps_ours_arr))
         swaps_introduced = int(np.sum(~swaps_base_arr & swaps_ours_arr))
+        
+        swaps_base_arr_strict = check_limb_swaps(base_coords_2d, gt_coords, vis, area, margin=0.7)
+        swaps_ours_arr_strict = check_limb_swaps(ours_coords[:, :2], gt_coords, vis, area, margin=0.7)
+        
+        swaps_base_strict = int(np.sum(swaps_base_arr_strict))
+        swaps_ours_strict = int(np.sum(swaps_ours_arr_strict))
+        swaps_corrected_strict = int(np.sum(swaps_base_arr_strict & ~swaps_ours_arr_strict))
+        swaps_introduced_strict = int(np.sum(~swaps_base_arr_strict & swaps_ours_arr_strict))
         
         ours_score_mean = float(np.mean(ours_scores))
 
@@ -1174,6 +1204,10 @@ class EvaluationRunner:
                 "swaps_ours": swaps_ours,
                 "swaps_corrected": swaps_corrected,
                 "swaps_introduced": swaps_introduced,
+                "swaps_base_strict": swaps_base_strict,
+                "swaps_ours_strict": swaps_ours_strict,
+                "swaps_corrected_strict": swaps_corrected_strict,
+                "swaps_introduced_strict": swaps_introduced_strict,
                 "nll": float(nll_val),
                 "entropy": float(entropy_val),
                 "covariance_volume": float(cov_vol),
