@@ -30,7 +30,7 @@ initial_uniform_weight: 0.2   # Initial weight for uniform component
 #                     graph to jointly resolve all keypoints, eliminating
 #                     limb swaps via anatomical bone-length constraints.
 #                     Only acts on bimodal (K=2) keypoints.
-decode_strategy: mrf_graph
+decode_strategy: argmax
 variance_filter_threshold: 3.0  # det(Sigma) ratio (used by variance_filter)
 
 # MRF Graph Decoding parameters (only used when decode_strategy = mrf_graph)

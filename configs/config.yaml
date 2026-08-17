@@ -2,7 +2,7 @@
 # Based on structured configuration pattern for reproducible research
 
 defaults:
-  - model: hrnet_w32  # Can be overridden: resnet50, vitpose_small, etc.
+  - model: hrnet_w32 # Can be overridden: hrnet_w32, resnet50, vitpose_small, etc.
   - tta
   - sampling  # Monte Carlo sampling configuration
   - mixture
@@ -21,11 +21,11 @@ paths:
 
 # Dataset configuration
 dataset:
-  #name: "coco"
-  #root_dir: "${paths.project_root}/data/coco"
+  name: "coco"
+  root_dir: "${paths.project_root}/data/coco"
   # Archivos específicos relativos a root_dir
-  #annotations: "annotations/person_keypoints_val2017.json"
-  #images: "val2017"
+  annotations: "annotations/person_keypoints_val2017.json"
+  images: "val2017"
   resize_scale: 1   # < 1.0 reduce la resolución de entrada antes del benchmark
   noise_mean: 0.0
   noise_sigma: 0.0      # > 0 añade ruido gaussiano blanco
@@ -44,10 +44,10 @@ dataset:
   
   # Alternative: OCHuman dataset configuration
   # To use OCHuman, override with:
-  name: ochuman
-  root_dir: "${hydra:runtime.cwd}/data/ochuman"
-  annotations: "annotations/ochuman_coco_format_val_range_0.00_1.00.json"
-  images: "images"
+  #name: ochuman
+  #root_dir: "${hydra:runtime.cwd}/data/ochuman"
+  #annotations: "annotations/ochuman_coco_format_val_range_0.00_1.00.json"
+  #images: "images"
 
 # Mathematical Core Configuration
 math_core:
@@ -92,7 +92,14 @@ evaluation:
   output_dir: ${paths.project_root}/outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}/eval_results
   batch_size_mass: 32           # Para la evaluación rápida (Runner Modo 1)
   batch_size_deep: 1            # OBLIGATORIO 1 para deep profiling (Runner Modo 2)
-  debug_limit: 500             # Poner un número (ej. 10) para pruebas rápidas. Null para dataset completo.
+  debug_limit: 500            # Poner un número (ej. 10) para pruebas rápidas. Null para dataset completo.
+
+# Fusión Adaptativa de Incertidumbre
+adaptive_uncertainty:
+  enabled: true
+  beta: 0.012               # Hiperparámetro de sensibilidad exponencial para GMM det(Sigma)
+  strategy: max_pooling     # Opciones: max_pooling, gating_k, gating_tau, all
+  tau: 0.5                  # Umbral para estrategia gating_tau
 
 # Logging
 logging:
