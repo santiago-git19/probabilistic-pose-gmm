@@ -82,10 +82,10 @@ def create_evaluation_dataset(
 
     # --- fast run -----------------------------------------------------------
     if fo.dataset_exists(dataset_name) and not overwrite:
-        logger.info(f"El dataset '{dataset_name}' ya existe. Saltando la carga de datos...")
+        logger.info(f"Dataset '{dataset_name}' already exists. Skipping data ingestion...")
         dataset = fo.load_dataset(dataset_name)
         session = fo.launch_app(dataset, address="0.0.0.0", remote=True)
-        print("Servidor activo. Presiona Ctrl+C para salir.")
+        print("Server active. Press Ctrl+C to exit.")
         session.wait()
         return dataset
 
@@ -127,7 +127,7 @@ def create_evaluation_dataset(
 
     # ---- launch app --------------------------------------------------------
     session = fo.launch_app(dataset, address="0.0.0.0", remote=True)
-    print("Servidor activo. Presiona Ctrl+C para salir.")
+    print("Server active. Press Ctrl+C to exit.")
     session.wait()
     return dataset
 

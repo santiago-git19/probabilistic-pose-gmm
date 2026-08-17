@@ -651,12 +651,12 @@ def main() -> None:
     results_catalog["fig4_heatmap_poisoning_resolved"] = query_fig4.head(args.top_k).to_dict(orient="records")
 
     # --------------------------------------------------------------------------
-    # FIGURA 5: Visualización de la Papelera Uniforme (pi_uniform) ante la Pérdida de Resolución
-    # Target: Crecimiento gradual y monótono de pi_uniform a lo largo de las 5 escalas de degradación
+    # FIGURE 5: Visualization of Uniform Background Component (pi_uniform) under Resolution Degradation
+    # Target: Gradual, monotonic growth of pi_uniform across 5 degradation tiers
     # --------------------------------------------------------------------------
-    print_section_header("Fig 5: Papelera Uniforme (pi_uniform) ante Pérdida de Resolución (Crecimiento Gradual)")
-    print("Concepto: Curva de crecimiento monótona y progresiva de pi_uniform [Clean -> Low -> Med -> High -> Extreme]")
-    print("          donde las etapas intermedias ya absorben ruido y el extremo alcanza una masa visual significativa.")
+    print_section_header("Fig 5: Uniform Background Component (pi_uniform) under Resolution Degradation")
+    print("Concept: Monotonic progression of pi_uniform [Clean -> Low -> Med -> High -> Extreme]")
+    print("         where intermediate tiers absorb noise and extreme tier exhibits substantial background mass.")
 
     target_df_fig5 = dfs_by_stage.get("gmm_no_tta", master_df)
     exp_order = ["00_Baseline_Clean", "01_Resize_Low", "02_Resize_Medium", "03_Resize_High", "04_Resize_Extreme"]
@@ -665,15 +665,15 @@ def main() -> None:
     clean_dict = dfs_by_exp["00_Baseline_Clean"]
     records_fig5 = []
 
-    coco_img_dir = Path(r"C:\Users\Santiago estudio\Desktop\TFG_Informatica\robust-pose-tta\data\coco\val2017")
-    ochuman_img_dir = Path(r"C:\Users\Santiago estudio\Desktop\TFG_Informatica\robust-pose-tta\data\ochuman\images")
-    crowdpose_img_dir = Path(r"C:\Users\Santiago estudio\Desktop\TFG_Informatica\robust-pose-tta\data\crowdpose\images")
+    coco_img_dir = Path(r"data/coco/val2017")
+    ochuman_img_dir = Path(r"data/ochuman/images")
+    crowdpose_img_dir = Path(r"data/crowdpose/images")
 
     for key, r_clean in clean_dict.items():
         iid, ds, m_arch = key
         ds = str(ds).lower()
 
-        # Debe existir en los 5 niveles de resolución
+        # Must exist across all 5 resolution tiers
         if not all(key in dfs_by_exp[exp] for exp in exp_order):
             continue
 
@@ -808,7 +808,7 @@ def main() -> None:
             results_catalog["fig6_cross_architecture"] = piv.head(args.top_k).to_dict(orient="records")
 
     # --------------------------------------------------------------------------
-    # Guardar en JSON
+    # Save to JSON
     # --------------------------------------------------------------------------
     out_path = Path(args.out_json)
     with open(out_path, "w", encoding="utf-8") as f:

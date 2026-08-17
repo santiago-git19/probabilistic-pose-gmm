@@ -4,24 +4,21 @@ import sys
 import torch
 import warnings
 
-# Ignorar warnings de inicialización
+# Ignore initialization warnings
 warnings.filterwarnings("ignore")
 
 def main():
-    print("=== REPORTE DE ENTORNO TFG ===")
+    print("=== ENVIRONMENT HEALTH CHECK ===")
     
-    # 1. VERIFICAR HARDWARE
-    print(f"✅ PyTorch Versión: {torch.__version__}")
-    print(f"✅ CUDA Disponible: {torch.cuda.is_available()}")
+    # 1. HARDWARE VERIFICATION
+    print(f"✅ PyTorch Version: {torch.__version__}")
+    print(f"✅ CUDA Available: {torch.cuda.is_available()}")
     
-    # 2. DEFINIR RUTAS ABSOLUTAS
-    # Guardamos donde estamos ahora (root del proyecto)
+    # 2. DEFINE ABSOLUTE PATHS
     PROJECT_ROOT = os.path.abspath(os.getcwd())
-    
-    # Definimos donde está MMPose
     MMPOSE_ROOT = os.path.join(PROJECT_ROOT, "models", "mmpose")
     
-    # Rutas a los archivos (Absolutas)
+    # Absolute paths to config and weights
     config_file = os.path.join(
         MMPOSE_ROOT, "configs", 
         "body_2d_keypoint", "topdown_heatmap", "coco", 
@@ -29,19 +26,19 @@ def main():
     )
     checkpoint_file = os.path.join(PROJECT_ROOT, "models", "weights", "hrnet_w32.pth")
 
-    # 3. VERIFICAR EXISTENCIA FÍSICA
+    # 3. VERIFY PHYSICAL ASSETS EXISTENCE
     if not os.path.exists(MMPOSE_ROOT):
-        print(f"❌ ERROR: No encuentro la carpeta models/mmpose en:\n   {MMPOSE_ROOT}")
+        print(f"❌ ERROR: Cannot find models/mmpose directory at:\n   {MMPOSE_ROOT}")
         return
     if not os.path.exists(config_file):
-        print(f"❌ ERROR: No encuentro el config en:\n   {config_file}")
+        print(f"❌ ERROR: Cannot find config file at:\n   {config_file}")
         return
     if not os.path.exists(checkpoint_file):
-        print(f"❌ ERROR: No encuentro los pesos en:\n   {checkpoint_file}")
+        print(f"❌ ERROR: Cannot find weights file at:\n   {checkpoint_file}")
         return
 
-    # 4. CARGA DE MODELO (ESTRATEGIA "CAMBIO DE CONTEXTO")
-    print("🔄 Intentando cargar HRNet-W32...")
+    # 4. LOAD MODEL WITH WORKING DIRECTORY CONTEXT SWITCH
+    print("🔄 Attempting to load HRNet-W32...")
     
     try:
         from mmpose.apis import init_model
@@ -49,26 +46,22 @@ def main():
         
         register_all_modules()
         
-        # --- EL TRUCO DE INGENIERÍA ---
-        # Cambiamos el directorio de trabajo a models/mmpose temporalmente.
-        # Esto hace que las rutas relativas internas 'configs/_base_...' funcionen.
-        print(f"   📂 Cambiando contexto a: {MMPOSE_ROOT}")
+        # Switch working directory to models/mmpose so internal relative imports resolve
+        print(f"   📂 Switching context to: {MMPOSE_ROOT}")
         os.chdir(MMPOSE_ROOT)
         
-        # Inicializamos el modelo (ahora MMPose se siente como en casa)
         model = init_model(config_file, checkpoint_file, device='cpu')
         
-        # Volvemos a casa (importante para el resto del script)
+        # Restore project root working directory
         os.chdir(PROJECT_ROOT)
-        print(f"   📂 Contexto restaurado a: {PROJECT_ROOT}")
+        print(f"   📂 Context restored to: {PROJECT_ROOT}")
         
-        print("✅ ¡ÉXITO! El modelo se ha cargado en memoria.")
-        print(f"   (Modelo: HRNet cargado correctamente con {sum(p.numel() for p in model.parameters()):,} parámetros)")
+        print("✅ SUCCESS! Model initialized into memory.")
+        print(f"   (Model: HRNet initialized with {sum(p.numel() for p in model.parameters()):,} parameters)")
         
     except Exception as e:
-        # Asegurarnos de volver al directorio original si algo falla
         os.chdir(PROJECT_ROOT)
-        print(f"❌ ERROR CRÍTICO: {e}")
+        print(f"❌ CRITICAL ERROR: {e}")
         import traceback
         traceback.print_exc()
 

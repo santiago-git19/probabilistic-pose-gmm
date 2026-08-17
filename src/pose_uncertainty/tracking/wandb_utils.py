@@ -158,7 +158,7 @@ def wandb_run(
             notes=notes,
             job_type=job_type,
             config=resolved_config,
-            reinit=True,  # permite múltiples runs en el mismo proceso
+            reinit=True,  # allows multiple runs in the same process
         )
         logger.info("wandb run initialized: %s (project=%s)", run.name, project)
         yield run
@@ -168,7 +168,7 @@ def wandb_run(
         raise
 
     finally:
-        # Garantizar cierre seguro del run
+        # Guarantee clean teardown of wandb run
         if run is not None:
             try:
                 wandb.finish()

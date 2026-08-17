@@ -207,8 +207,8 @@ def select_keypoint_outliers(
         logger.warning("No valid delta_oks values found in DataFrame")
         return {"Top_Single_KP_Gains": [], "Worst_Single_KP_Drops": []}
     
-    df["max_kp_gain"] = df_deltas.max(axis=1, skipna=True)
-    df["min_kp_drop"] = df_deltas.min(axis=1, skipna=True)
+    df["max_kp_gain"] = pd.to_numeric(df_deltas.max(axis=1, skipna=True), errors="coerce").astype(float)
+    df["min_kp_drop"] = pd.to_numeric(df_deltas.min(axis=1, skipna=True), errors="coerce").astype(float)
 
     # Track which keypoint caused the max/min (only for valid rows)
     df["best_kp"] = None

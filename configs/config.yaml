@@ -23,17 +23,17 @@ paths:
 dataset:
   name: "coco"
   root_dir: "${paths.project_root}/data/coco"
-  # Archivos específicos relativos a root_dir
+  # Specific annotation and image files relative to root_dir
   annotations: "annotations/person_keypoints_val2017.json"
   images: "val2017"
-  resize_scale: 1   # < 1.0 reduce la resolución de entrada antes del benchmark
+  resize_scale: 1   # < 1.0 reduces input resolution before benchmark
   noise_mean: 0.0
-  noise_sigma: 0.0      # > 0 añade ruido gaussiano blanco
-  noise_seed: ${seed}   # Semilla para ruido reproducible por imagen
-  contrast_factor: 1.0  # < 1.0 disminuye el contraste
-  blur_kernel_size: 0    # > 1 aplica Gaussian blur (mejor impar: 3, 5, 7...)
+  noise_sigma: 0.0      # > 0 adds additive white Gaussian noise
+  noise_seed: ${seed}   # Seed for reproducible per-image noise
+  contrast_factor: 1.0  # < 1.0 decreases contrast
+  blur_kernel_size: 0    # > 1 applies Gaussian blur (odd integers: 3, 5, 7...)
   blur_sigma: 0.0
-  smooth_kernel_size: 0  # > 1 aplica un filtro de media (low-pass / smooth)
+  smooth_kernel_size: 0  # > 1 applies average filter (low-pass smoothing)
   
   # Alternative: CrowdPose dataset configuration
   # To use CrowdPose, override with:
@@ -88,18 +88,18 @@ metrics:
   - auc  # Area Under Curve
 
 evaluation:
-  n_samples_per_group: 50       # Cuántas imágenes guardar por categoría (Win, Regression...)
+  n_samples_per_group: 50       # Number of diagnostic images to save per focus group (Win, Regression...)
   output_dir: ${paths.project_root}/outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}/eval_results
-  batch_size_mass: 32           # Para la evaluación rápida (Runner Modo 1)
-  batch_size_deep: 1            # OBLIGATORIO 1 para deep profiling (Runner Modo 2)
-  debug_limit: 500            # Poner un número (ej. 10) para pruebas rápidas. Null para dataset completo.
+  batch_size_mass: 32           # Fast mass evaluation batch size (Stage 1)
+  batch_size_deep: 1            # Deep profiling batch size (Stage 2)
+  debug_limit: 5            # Fast verification sample limit (null for full dataset evaluation)
 
-# Fusión Adaptativa de Incertidumbre
+# Adaptive Uncertainty Fusion
 adaptive_uncertainty:
   enabled: true
-  beta: 0.012               # Hiperparámetro de sensibilidad exponencial para GMM det(Sigma)
-  strategy: max_pooling     # Opciones: max_pooling, gating_k, gating_tau, all
-  tau: 0.5                  # Umbral para estrategia gating_tau
+  beta: 0.012               # Sensitivity hyperparameter for GMM det(Sigma)
+  strategy: max_pooling     # Options: max_pooling, gating_k, gating_tau, all
+  tau: 0.5                  # Threshold for gating_tau strategy
 
 # Logging
 logging:

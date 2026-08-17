@@ -1,23 +1,22 @@
-"""
-Script de Comparación de Experimentos (Benchmarking Comparativo).
+"""Comparative Experiment Benchmarking Script.
 
-Permite definir múltiples configuraciones y ejecutarlas secuencialmente
-para comparar métricas (A/B Testing, Grid Search manual, etc.).
+Allows defining multiple configurations and executing them sequentially
+to compare metrics (A/B testing, manual ablation sweeps, etc.).
 
-Principios:
-    - **Inmutabilidad**: Cada experimento parte de un ``deepcopy`` de la
-      configuración base; los overrides SOLO afectan al experimento actual.
-    - **Eficiencia**: El DataLoader y el modelo se instancian una sola vez
-      y se reutilizan en todos los experimentos (salvo cambio de modelo).
-    - **Robustez**: Si un experimento falla, el script continúa con el
-      siguiente y registra el error.
+Design Principles:
+    - Immutability: Each experiment starts from a deepcopy of the base
+      configuration; overrides only affect the current experiment.
+    - Efficiency: DataLoader and model are instantiated once and reused
+      across experiments (unless model architecture changes).
+    - Robustness: If an experiment fails, the script logs the error and
+      continues with subsequent runs.
 
-Uso::
+Usage::
 
     cd <project_root>
     python src/experiments/compare_experiments.py
 
-    # Con debug_limit para pruebas rápidas:
+    # Quick test with debug limit:
     python src/experiments/compare_experiments.py evaluation.debug_limit=20
 """
 
@@ -52,14 +51,14 @@ from src.pose_uncertainty.tracking import wandb_run, log_metrics, log_summary_ta
 log = logging.getLogger(__name__)
 
 # =============================================================================
-# ████  DEFINICIÓN DE EXPERIMENTOS  ████
+# EXPERIMENT DEFINITIONS
 # =============================================================================
-# Formato:  "Nombre_Experimento": { "clave.anidada.hydra": valor, ... }
+# Format: "Experiment_Name": { "nested.hydra.key": value, ... }
 #
-# Cada diccionario interno contiene SOLO los parámetros que difieren de
-# config.yaml.  Todo lo demás permanece intacto.
+# Each sub-dictionary contains ONLY parameters differing from config.yaml.
+# Everything else remains intact.
 #
-# ESTUDIO ABLATIVO TTA - Prueba cada componente por separado y combinado
+# TTA ABLATION STUDY - Evaluates individual and combined components
 # =============================================================================
 
 '''
@@ -134,7 +133,7 @@ EXPERIMENTS: Dict[str, Dict[str, Any]] = {
         "photometric.blur.enabled": False,
     },
 
-    # Scale con diferentes parámetros de weighting
+    # Scale with different weighting parameters
     "05_ScaleOnly_HighPeakExp": {
         "flip.enabled": False,
         "scale.enabled": True,
@@ -427,7 +426,7 @@ EXPERIMENTS: Dict[str, Dict[str, Any]] = {
 
 
 # =============================================================================
-# ████  FIN DEFINICIÓN DE EXPERIMENTOS  ████
+# ████  END OF EXPERIMENT DEFINITIONS  ████
 # =============================================================================
 
 
@@ -436,7 +435,7 @@ EXPERIMENTS: Dict[str, Dict[str, Any]] = {
 # ---------------------------------------------------------------------------
 
 def _sanitize_name(name: str) -> str:
-    """Convierte un nombre de experimento en uno seguro para rutas."""
+    """Sanitize experiment name for filesystem paths."""
     return (
         name.replace(" ", "_")
         .replace("(", "")
@@ -447,16 +446,16 @@ def _sanitize_name(name: str) -> str:
 
 
 def _set_nested(cfg: DictConfig, dotted_key: str, value: Any) -> None:
-    """Establece ``cfg[a][b][c] = value`` dada la clave ``'a.b.c'``.
+    """Set ``cfg[a][b][c] = value`` given dot-separated key ``'a.b.c'``.
 
-    Crea nodos intermedios si no existen (dentro de ``open_dict``).
+    Creates intermediate nodes if they do not exist (within ``open_dict``).
     """
     parts = dotted_key.split(".")
     node = cfg
     for part in parts[:-1]:
         child = OmegaConf.select(node, part, default=None)
         if child is None:
-            # Crear nodo intermedio
+            # Create intermediate dictionary node
             OmegaConf.update(node, part, {})
             child = OmegaConf.select(node, part)
         node = child
@@ -464,10 +463,10 @@ def _set_nested(cfg: DictConfig, dotted_key: str, value: Any) -> None:
 
 
 def apply_overrides(cfg: DictConfig, overrides: Dict[str, Any]) -> None:
-    """Aplica un diccionario de overrides (claves dot-separated) a *cfg*.
+    """Apply dictionary of dot-separated overrides to Hydra configuration *cfg*.
 
-    Usa ``open_dict`` para permitir escritura en configuraciones struct y
-    ``OmegaConf.update`` para navegar la jerarquía de forma segura.
+    Uses ``open_dict`` to allow mutations on structured configs and
+    ``OmegaConf.update`` to safely traverse the hierarchy.
     """
     with open_dict(cfg):
         for key, val in overrides.items():
@@ -475,15 +474,15 @@ def apply_overrides(cfg: DictConfig, overrides: Dict[str, Any]) -> None:
                 _set_nested(cfg, key, val)
                 log.info("  -> Override: %s = %s", key, val)
             except Exception as exc:
-                log.error("  [ERROR] No se pudo aplicar override '%s': %s", key, exc)
+                log.error("  [ERROR] Failed to apply override '%s': %s", key, exc)
 
 
 def _extract_scalar_metrics(
     df: pd.DataFrame, experiment_name: str, overrides: Dict[str, Any],
 ) -> Dict[str, Any]:
-    """Extrae métricas agregadas de un DataFrame de resultados.
+    """Extract aggregate scalar metrics from an evaluation results DataFrame.
 
-    Es tolerante a columnas ausentes (devuelve ``NaN`` si no existen).
+    Tolerates missing columns gracefully (returns ``NaN``).
     """
     def _safe_mean(col: str) -> float:
         if col in df.columns:
@@ -527,7 +526,7 @@ def _extract_scalar_metrics(
 
 
 def _try_free_gpu() -> None:
-    """Libera caché de GPU si torch está disponible."""
+    """Release GPU cache if PyTorch CUDA is available."""
     try:
         import torch
         if torch.cuda.is_available():
@@ -547,43 +546,40 @@ def main(cfg: DictConfig) -> None:
     log.info("  %d experiments defined", len(EXPERIMENTS))
     log.info("=" * 70)
 
-    # Directorio raíz del proyecto (absoluto, no depende del CWD de Hydra)
+    # Project root directory (absolute path)
     project_root = _PROJECT_ROOT
     comparison_dir = project_root / "outputs" / "comparisons"
     comparison_dir.mkdir(parents=True, exist_ok=True)
 
     # ------------------------------------------------------------------
-    # 1) Recurso compartido: DataLoader  (una sola instancia)
+    # 1) Shared resource: DataLoader (single instance if configs match)
     # ------------------------------------------------------------------
-    #log.info("[SETUP] Cargando dataset (compartido entre experimentos)...")
-    #dataloader = _build_dataloader(cfg)
-
-    # Debug limit (idéntico al que soporta run_benchmark.py)
+    # Debug limit (identical to run_benchmark.py)
     debug_limit: Optional[int] = OmegaConf.select(
         cfg, "evaluation.debug_limit", default=None
     )
     if debug_limit is not None:
         log.warning(
-            "DEBUG MODE: Cada experimento procesará como máximo %d imágenes.",
+            "DEBUG MODE: Each experiment will process at most %d images.",
             debug_limit,
         )
 
     # ------------------------------------------------------------------
-    # 2) Recurso compartido: Modelo  (se reutiliza si no cambia)
+    # 2) Shared resource: Model adapter (reused across runs)
     # ------------------------------------------------------------------
     base_model_name: str = OmegaConf.select(cfg, "model.name", default="hrnet_w32")
     base_device: str = OmegaConf.select(cfg, "model.device", default="cuda")
-    log.info("[SETUP] Cargando modelo '%s' en '%s' ...", base_model_name, base_device)
+    log.info("[SETUP] Loading model '%s' on '%s' ...", base_model_name, base_device)
     shared_model = create_model_adapter(base_model_name, device=base_device)
 
     # ------------------------------------------------------------------
-    # 3) Bucle de experimentos
+    # 3) Experiment Loop
     # ------------------------------------------------------------------
     results_summary: List[Dict[str, Any]] = []
     timings: Dict[str, float] = {}
 
     for exp_idx, (exp_name, overrides) in enumerate(
-        tqdm(EXPERIMENTS.items(), desc="Experimentos", unit="exp"),
+        tqdm(EXPERIMENTS.items(), desc="Experiments", unit="exp"),
         start=1
     ):
         log.info("")
@@ -593,55 +589,54 @@ def main(cfg: DictConfig) -> None:
         )
         log.info("-" * 60)
 
-        # ---- Clonar config de forma segura ----------------------------
+        # ---- Safely clone base config ---------------------------------
         current_cfg = copy.deepcopy(cfg)
 
-        # Directorio de salida aislado para este experimento
+        # Isolated output directory for this experiment
         safe_name = _sanitize_name(exp_name)
         exp_output = comparison_dir / safe_name
         with open_dict(current_cfg):
             OmegaConf.update(current_cfg, "logging.output_dir", str(exp_output))
 
-        # ---- Extraer grupo W&B y limpiar overrides --------------------
-        # Sacamos 'wandb_group' para no inyectarlo en la config de Hydra
+        # ---- Extract W&B group and sanitize overrides ----------------
         clean_overrides = overrides.copy()
         run_group = clean_overrides.pop("wandb_group", "compare_experiments")
 
-        # ---- Aplicar overrides exclusivos de este experimento ---------
+        # ---- Apply exclusive overrides for this experiment ------------
         apply_overrides(current_cfg, clean_overrides)
 
-        # ---- Ejecutar evaluación --------------------------------------
+        # ---- Execute evaluation ---------------------------------------
         t0 = time.perf_counter()
 
-        # ---- Crear dataloader fresco con los parámetros fotométricos actuales
-        log.info("  -> Instanciando DataLoader para %s...", exp_name)
+        # ---- Build fresh dataloader for current augmentation/degradation settings
+        log.info("  -> Instantiating DataLoader for %s...", exp_name)
         current_dataloader = _build_dataloader(current_cfg)
 
-        # --- wandb: un run por experimento (try/finally garantiza finish) --
+        # --- W&B run tracking (try/finally ensures clean termination) --
         with wandb_run(
             current_cfg,
             name=exp_name,
             tags=["degradation", cfg.dataset.name, base_model_name],
-            group=run_group,  # <- Aquí usamos el grupo dinámico
+            group=run_group,
             job_type="evaluation",
         ):
             try:
                 runner = EvaluationRunner(current_cfg, dataloader=current_dataloader)
 
-                # Reutilizar modelo si la config de modelo no ha cambiado
+                # Reuse shared model if model config is identical
                 exp_model_name: str = OmegaConf.select(
                     current_cfg, "model.name", default="hrnet_w32"
                 )
                 if exp_model_name == base_model_name:
                     runner.model = shared_model
-                    log.info("  (reutilizando modelo compartido '%s')", base_model_name)
+                    log.info("  (reusing shared model '%s')", base_model_name)
 
-                # Debug limit: envolver dataloader con islice
+                # Debug limit: wrap dataloader with islice
                 if debug_limit is not None:
                     import itertools
                     runner.dataloader = itertools.islice(current_dataloader, debug_limit)
 
-                # Solo mass evaluation (Stage 1)
+                # Mass evaluation stage
                 df = runner.run_mass_evaluation()
 
                 elapsed = time.perf_counter() - t0
@@ -652,7 +647,7 @@ def main(cfg: DictConfig) -> None:
                     metrics["elapsed_s"] = round(elapsed, 2)
                     results_summary.append(metrics)
 
-                    # --- wandb: log métricas escalares del experimento ---
+                    # --- W&B scalar metrics log ---
                     log_metrics({
                         "oks_ours_mean": metrics["oks_ours_mean"],
                         "oks_base_mean": metrics["oks_base_mean"],
@@ -685,65 +680,65 @@ def main(cfg: DictConfig) -> None:
                         elapsed,
                     )
                 else:
-                    log.warning("  [WARN] %s devolvió un DataFrame vacío.", exp_name)
+                    log.warning("  [WARN] %s returned an empty DataFrame.", exp_name)
 
             except Exception:
-                log.exception("  [FAIL] Error crítico en experimento '%s'", exp_name)
+                log.exception("  [FAIL] Critical failure in experiment '%s'", exp_name)
 
             finally:
-                # Limpieza de memoria (sin destruir el modelo compartido)
+                # Memory cleanup (without destroying shared model)
                 if "runner" in dir():
                     del runner  # pragma: no cover
                 gc.collect()
                 _try_free_gpu()
 
     # ------------------------------------------------------------------
-    # 4) Resumen final
+    # 4) Final Summary
     # ------------------------------------------------------------------
     log.info("")
     log.info("=" * 70)
-    log.info("  BENCHMARK COMPLETADO")
+    log.info("  BENCHMARK COMPLETED")
     log.info("=" * 70)
 
     if not results_summary:
-        log.error("Ningún experimento produjo resultados.")
+        log.error("No experiment produced valid results.")
         return
 
     df_results = pd.DataFrame(results_summary)
 
-    # Ordenar por mejor OKS
+    # Sort by highest OKS
     if "oks_ours_mean" in df_results.columns:
         df_results = df_results.sort_values("oks_ours_mean", ascending=False)
 
-    # Mostrar tabla en consola
+    # Console summary table
     display_cols = [
         "experiment", "n_images", "oks_ours_mean", "oks_base_mean",
         "delta_oks_mean", "nll_mean", "entropy_mean", "elapsed_s",
     ]
     display_cols = [c for c in display_cols if c in df_results.columns]
     print("\n" + "=" * 70)
-    print("  RESULTADOS COMPARATIVOS")
+    print("  COMPARATIVE RESULTS SUMMARY")
     print("=" * 70)
     print(df_results[display_cols].to_string(index=False))
     print("=" * 70)
 
-    # Guardar CSV (ruta absoluta, independiente del CWD de Hydra)
+    # Save CSV
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     csv_path = comparison_dir / f"comparison_results_{timestamp}.csv"
     df_results.to_csv(csv_path, index=False)
-    log.info("CSV guardado en: %s", csv_path)
+    log.info("CSV saved to: %s", csv_path)
 
-    # Enlace simbólico / copia al nombre fijo para fácil acceso
+    # Fixed latest copy
     latest_path = comparison_dir / "comparison_results_latest.csv"
     try:
         if latest_path.exists():
             latest_path.unlink()
         df_results.to_csv(latest_path, index=False)
-        log.info("Copia en:       %s", latest_path)
+        log.info("Latest copy:  %s", latest_path)
     except OSError:
-        pass  # no es crítico
+        pass
 
-    # --- wandb: log tabla resumen global en un run dedicado ---------------
+    # --- W&B global summary table in dedicated run ---
     with wandb_run(
         cfg,
         name="comparison_summary",

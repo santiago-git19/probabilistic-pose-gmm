@@ -610,7 +610,7 @@ class EvaluationRunner:
         # Prepare reference heatmap for coordinate transformations if needed
         ref_hm_for_trans = locals().get('ref_hm', None)
         if ref_hm_for_trans is None and metadata_ref is not None:
-            print("[NOTIFICACIÓN] Flujo alternativo: 'ref_hm' no se encontró en variables locales. Construyendo StandardizedHeatmap de respaldo.")
+            print("[NOTICE] Fallback flow: 'ref_hm' not in locals. Building fallback StandardizedHeatmap.")
             try:
                 from ..utils.types import StandardizedHeatmap
                 ref_hm_for_trans = StandardizedHeatmap(
@@ -619,8 +619,7 @@ class EvaluationRunner:
                     metadata=metadata_ref,
                 )
             except Exception as e:
-                print(f"[ERROR/EXCEPCIÓN] Falló la construcción de StandardizedHeatmap en el bloque except: {e}")
-                logger.debug(f"Excepción al construir StandardizedHeatmap de respaldo: {e}")
+                print(f"[ERROR] Failed building fallback StandardizedHeatmap: {e}")
                 ref_hm_for_trans = None
 
         for k, mr in enumerate(gmm_results):
@@ -639,8 +638,7 @@ class EvaluationRunner:
                 try:
                     m_img, c_img = MMPoseAdapter.transform_heatmap_gaussians_to_image(m, c, ref_hm_for_trans)
                 except Exception as e:
-
-                    print(f"[ERROR/EXCEPCIÓN] Falló transform_heatmap_gaussians_to_image en keypoint {k}: {e}")
+                    print(f"[ERROR] Failed transform_heatmap_gaussians_to_image in keypoint {k}: {e}")
                     logger.debug(f"Transform gaussians failed for kp {k}: {e}")
                     m_img, c_img = m, c
             else:

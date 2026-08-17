@@ -446,45 +446,45 @@ class RobustGaussianMixture:
         uniform_resp: npt.NDArray[np.float64]
     ) -> None:
         """
-        M-step vectorizado que mantiene la compatibilidad con la lista self.components_.
+        Vectorized M-step maintaining compatibility with self.components_ list.
         """
         n_samples, d = samples.shape
         
-        # 1. Calcular N_k (peso total de cada componente)
+        # 1. Compute N_k (total weight of each component)
         n_k = responsibilities.sum(axis=0)
         
-        # Máscara para evitar divisiones por cero en componentes muertos
+        # Mask to prevent division by zero in inactive/dead components
         active_mask = n_k > 1e-10
         n_k_safe = np.where(active_mask, n_k, 1.0)
         
-        # 2. Actualizar Medias: (K, N) @ (N, D) -> (K, D)
+        # 2. Update Means: (K, N) @ (N, D) -> (K, D)
         new_means = (responsibilities.T @ samples) / n_k_safe[:, np.newaxis]
         
-        # 3. Actualizar Covarianzas
+        # 3. Update Covariances
         # diff: (N, K, D)
         diff = samples[:, np.newaxis, :] - new_means[np.newaxis, :, :]
         
-        # einsum calcula las matrices de covarianza de todos los componentes simultáneamente
+        # einsum computes covariance matrices across all components simultaneously
         new_covs = np.einsum('nk,nki,nkj->kij', responsibilities, diff, diff)
         new_covs = new_covs / n_k_safe[:, np.newaxis, np.newaxis]
         
-        # Regularización vectorizada
+        # Vectorized regularization
         new_covs += self.reg_covar * np.eye(d)
         
-        # 4. VOLCAR LOS RESULTADOS A LOS OBJETOS ORIGINALES (Compatibilidad)
+        # 4. Populate updated parameters into component objects
         for k, comp in enumerate(self.components_):
             if active_mask[k]:
                 comp.mean = new_means[k].astype(np.float32)
                 comp.covariance = new_covs[k].astype(np.float32)
             
-            # El peso se actualiza siempre (caerá a 0 si el componente está muerto)
+            # Weight is updated unconditionally (falls to 0 if component is dead)
             comp.weight = float(n_k[k] / n_samples)
             comp.n_samples = int(n_k[k])
         
-        # 5. Actualizar el peso del componente uniforme
+        # 5. Update uniform component weight
         self.uniform_weight_ = float(uniform_resp.sum() / n_samples)
         
-        # 6. Normalizar para garantizar que todo sume exactamente 1.0
+        # 6. Normalize to ensure mixture weights sum exactly to 1.0
         self._normalize_weights()
     '''
     def _check_dead_components(self, responsibilities: npt.NDArray[np.float64]) -> None:
@@ -536,35 +536,34 @@ class RobustGaussianMixture:
         cov: npt.NDArray[np.float64]
     ) -> npt.NDArray[np.float64]:
         """
-        Calcula la PDF multivariante vectorizada para N muestras.
-        Reemplaza a scipy.stats.multivariate_normal.pdf para máxima eficiencia.
+        Compute vectorized multivariate normal PDF for N samples.
+        Replaces scipy.stats.multivariate_normal.pdf for high-throughput vectorized evaluation.
         """
         d = samples.shape[1]
         
         try:
-            # Inversa y determinante (muy rápido para 2x2)
+            # Inverse and determinant (analytic fast path for 2x2)
             inv_cov = np.linalg.inv(cov)
             det_cov = np.linalg.det(cov)
             
-            # Protección contra matrices singulares o mal condicionadas
+            # Protection against singular or ill-conditioned covariance matrices
             if det_cov <= 0:
                 return np.zeros(len(samples), dtype=np.float64)
                 
         except np.linalg.LinAlgError:
             return np.zeros(len(samples), dtype=np.float64)
             
-        # Constante de normalización
+        # Normalization constant
         norm_const = 1.0 / np.sqrt(((2 * np.pi) ** d) * det_cov)
         
-        # Desviación respecto a la media (N, 2)
+        # Spatial deviation relative to mean (N, 2)
         diff = samples - mean 
         
-        # Cálculo eficiente de Mahalanobis con Einstein Summation:
-        # 'ni' (muestras x dimensiones), 'ij' (inversa covarianza), 'nj' (muestras x dimensiones)
-        # El resultado es un array 1D de tamaño N.
+        # Efficient Mahalanobis distance via Einstein summation
+        # 'ni' (samples x dim), 'ij' (inv covariance), 'nj' (samples x dim) -> 1D array of length N
         mahalanobis_sq = np.einsum('ni,ij,nj->n', diff, inv_cov, diff)
         
-        # Prevenir underflow extremo antes de la exponencial
+        # Prevent extreme underflow before exponentiation
         mahalanobis_sq = np.clip(mahalanobis_sq, a_min=None, a_max=700)
         
         return norm_const * np.exp(-0.5 * mahalanobis_sq)
@@ -893,11 +892,11 @@ def fit_with_outer_loop(
             model_type_counts[result.model_type] += 1
             all_results.append(result)
 
-            # Agregar registro para inspeccionar las covarianzas
+            # Log winning covariance for inspection
             logger.debug(f"Outer iteration {t+1}: {result.model_type} won")
             logger.debug(f"Winning covariance (iteration {t+1}):\n{result.best_covariance}")
             
-            # Verificar si la covarianza contiene valores inválidos
+            # Verify covariance validity
             if np.any(np.isnan(result.best_covariance)) or np.any(np.isinf(result.best_covariance)):
                 logger.warning(f"Invalid covariance detected in iteration {t+1}: {result.best_covariance}")
             
@@ -925,7 +924,7 @@ def fit_with_outer_loop(
         aggregated_cov = mean_of_covs + var_of_means
 
 
-    # Verificar si la covarianza agregada es válida
+    # Verify aggregated covariance validity
     logger.debug(f"Aggregated covariance:\n{aggregated_cov}")
     if np.any(np.isnan(aggregated_cov)) or np.any(np.isinf(aggregated_cov)):
         logger.warning(f"Invalid aggregated covariance: {aggregated_cov}")

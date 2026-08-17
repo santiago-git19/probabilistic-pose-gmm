@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import roc_curve, auc
 
-# Configurar estilo visual
+# Configure visual styling
 sns.set_theme(style="whitegrid")
 log = logging.getLogger(__name__)
 
@@ -22,15 +22,15 @@ if str(_PROJECT_ROOT) not in sys.path:
 from src.pose_uncertainty.evaluation.runner import COCO_KEYPOINT_NAMES
 
 def _unroll_keypoints(df: pd.DataFrame) -> pd.DataFrame:
-    """Desenrolla el DataFrame de nivel de imagen a nivel de keypoint."""
+    """Unroll image-level DataFrame to keypoint-level records."""
     rows = []
     for _, row in df.iterrows():
         for kp in COCO_KEYPOINT_NAMES:
             if f"vis_{kp}" in row:
                 vis = row[f"vis_{kp}"]
-                # Incluimos los puntos ausentes (vis == 0) para evaluación OoD, descartando solo NaN
+                # Include absent joints (vis == 0) for OoD evaluation, discarding only NaNs
                 if pd.notna(vis) and vis >= 0:
-                    # Obtener o inferir el número de componentes (1 o 2 gaussianas)
+                    # Retrieve or infer component count (1 or 2 Gaussians)
                     if f"n_components_{kp}" in row and pd.notna(row[f"n_components_{kp}"]):
                         n_comp = int(row[f"n_components_{kp}"])
                     elif f"wasserstein_{kp}" in row and pd.notna(row[f"wasserstein_{kp}"]):
@@ -56,12 +56,12 @@ def _unroll_keypoints(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def compute_ause(df: pd.DataFrame, error_col: str, uncertainty_col: str) -> float:
-    """Calcula el Área bajo la Curva de Sparsification (AUSE)."""
+    """Compute Area Under Sparsification Error curve (AUSE)."""
     oracle_sorted = df.sort_values(by=error_col, ascending=False)
     model_sorted = df.sort_values(by=uncertainty_col, ascending=False)
     
     n_samples = len(df)
-    fractions = np.linspace(0, 1, min(n_samples, 100)) # 100 puntos para la gráfica
+    fractions = np.linspace(0, 1, min(n_samples, 100)) # 100 evaluation evaluation fractions
     
     oracle_errors = oracle_sorted[error_col].values
     model_errors = model_sorted[error_col].values
@@ -83,23 +83,23 @@ def plot_sparsification(
     strategy: str = "max_pooling",
     tau: float = 0.5
 ):
-    """Genera Sparsification Plot (AUSE) a nivel de keypoint con Fusión Adaptativa."""
+    """Generate Sparsification Plot (AUSE) at keypoint level with Adaptive Uncertainty Fusion."""
     if df.empty or "cov_det" not in df.columns or "vis" not in df.columns:
         return {}
 
-    # Filtrar estrictamente puntos válidos (vis > 0) para evaluación geométrica OKS/AUSE
+    # Filter strictly valid points (vis > 0) for geometric OKS/AUSE evaluation
     df = df[df["vis"] > 0].dropna(subset=["oks_ours", "cov_det"]).copy()
     if df.empty:
         return {}
 
-    # Calcular el error real para nuestro modelo y para el baseline
+    # Compute true error for our model and baseline
     df["error_ours"] = 1.0 - df["oks_ours"]
     if "oks_base" in df.columns:
         df["error_base"] = 1.0 - df["oks_base"]
     else:
         df["error_base"] = df["error_ours"]
     
-    # 1. Evaluar incertidumbre volumétrica del GMM contra el error de NUESTRO modelo
+    # 1. Evaluate volumetric uncertainty of GMM against error of our model
     ause, fractions, oracle, model = compute_ause(df, "error_ours", "cov_det")
     ause_mp = None
     ause_gate = None
@@ -112,17 +112,17 @@ def plot_sparsification(
     plt.plot(fractions, oracle, label="Oracle (True Error)", color="black", linestyle="--", linewidth=2)
     plt.fill_between(fractions, oracle, model, color="blue", alpha=0.1)
     
-    # Fusión Adaptativa: Evaluar contra NUESTRO error (porque devolvemos la coordenada del GMM)
+    # Adaptive Fusion: Evaluate against our error
     if "base_score" in df.columns and not df["base_score"].isna().all():
         u_base = 1.0 - df["base_score"]
         u_gmm = 1.0 - np.exp(-beta * df["cov_det"])
         
-        # Estrategia A: Enfoque Pesimista (Max-Pooling)
+        # Strategy A: Max-Pooling
         df["u_adapt_mp"] = np.maximum(u_base, u_gmm)
         ause_mp, _, _, model_mp = compute_ause(df, "error_ours", "u_adapt_mp")
         plt.plot(fractions, model_mp, label=f"Ours (Max-Pool) - AUSE: {ause_mp:.4f}", color="magenta", linewidth=2)
         
-        # Estrategia B: Interruptor Topológico (Gating)
+        # Strategy B: Topological Gating
         n_comp = df["n_components"] if "n_components" in df.columns else pd.Series(1, index=df.index)
         if strategy == "gating_tau":
             cond = (n_comp == 2) | (u_gmm > tau)
@@ -132,7 +132,7 @@ def plot_sparsification(
         ause_gate, _, _, model_gate = compute_ause(df, "error_ours", "u_adapt_gate")
         plt.plot(fractions, model_gate, label=f"Ours (Gating K=2) - AUSE: {ause_gate:.4f}", color="cyan", linewidth=2)
         
-        # Estrategia C: Softmax Ponderado
+        # Strategy C: Weighted Softmax
         exp_u_base = np.exp(u_base)
         exp_u_gmm = np.exp(u_gmm)
         sum_exp = exp_u_base + exp_u_gmm
@@ -142,7 +142,7 @@ def plot_sparsification(
         ause_softmax, _, _, model_softmax = compute_ause(df, "error_ours", "u_adapt_softmax")
         plt.plot(fractions, model_softmax, label=f"Ours (Softmax) - AUSE: {ause_softmax:.4f}", color="orange", linewidth=2)
     
-    # Evaluar Baselines: Evaluar su incertidumbre contra SU PROPIO error (error_base)
+    # Evaluate Baselines: Evaluate uncertainty against baseline error (error_base)
     if "base_score" in df.columns and not df["base_score"].isna().all():
         df["inv_base_score"] = -df["base_score"]
         ause_base, _, _, model_base = compute_ause(df, "error_base", "inv_base_score")
@@ -173,11 +173,11 @@ def plot_sparsification(
 
 
 def plot_ece(df: pd.DataFrame, output_dir: Path, n_bins: int = 10, suffix: str = ""):
-    """Calcula y dibuja Expected Calibration Error."""
+    """Compute and plot Expected Calibration Error."""
     if df.empty or "cov_det" not in df.columns or "vis" not in df.columns:
         return {}
         
-    # Filtrar estrictamente puntos válidos (vis > 0) para evaluación geométrica OKS/ECE
+    # Filter strictly valid points (vis > 0) for geometric OKS/ECE evaluation
     df = df[df["vis"] > 0].dropna(subset=["oks_ours", "cov_det"]).copy()
     if df.empty:
         return {}
@@ -215,7 +215,7 @@ def plot_ece(df: pd.DataFrame, output_dir: Path, n_bins: int = 10, suffix: str =
 
 
 def plot_limb_swap_roc(df: pd.DataFrame, output_dir: Path):
-    """Calcula ROC AUC para detectar limb swaps y auto-oclusiones severas."""
+    """Compute ROC AUC for detecting topological limb swaps and severe ambiguities."""
     if df.empty or "is_swapped" not in df.columns or "cov_det" not in df.columns:
         return {}
         
@@ -225,7 +225,7 @@ def plot_limb_swap_roc(df: pd.DataFrame, output_dir: Path):
         
     y_scores = df["cov_det"]
     
-    # Simple empirical ROC calculation to avoid sklearn dependency if not needed
+    # Empirical ROC calculation
     thresholds = np.percentile(y_scores, np.linspace(0, 100, 100))
     tpr, fpr = [], []
     
@@ -238,7 +238,6 @@ def plot_limb_swap_roc(df: pd.DataFrame, output_dir: Path):
         tpr.append(tp / pos_count if pos_count > 0 else 0)
         fpr.append(fp / neg_count if neg_count > 0 else 0)
         
-    # Sort by FPR
     sorted_indices = np.argsort(fpr)
     fpr = np.array(fpr)[sorted_indices]
     tpr = np.array(tpr)[sorted_indices]
@@ -259,7 +258,7 @@ def plot_limb_swap_roc(df: pd.DataFrame, output_dir: Path):
 
 
 def plot_catastrophic_failures(df: pd.DataFrame, output_dir: Path):
-    """Analiza y dibuja la tasa y peso de fallos catastróficos vs degradación."""
+    """Analyze and plot rate and weight of catastrophic failures vs degradation."""
     if df.empty or "uniform_weight_mean" not in df.columns or "experiment_name" not in df.columns:
         return {}
         
@@ -267,7 +266,7 @@ def plot_catastrophic_failures(df: pd.DataFrame, output_dir: Path):
     sns.boxplot(x="experiment_name", y="uniform_weight_mean", data=df, palette="Reds")
     plt.xticks(rotation=45, ha="right")
     plt.xlabel("Degradation Level")
-    plt.ylabel(r"Uniform Weight ($\pi_{uniforme}$)")
+    plt.ylabel(r"Uniform Weight ($\pi_{uniform}$)")
     plt.title("Catastrophic Failures vs Degradation")
     plt.tight_layout()
     plt.savefig(output_dir / "catastrophic_failures_boxplot.png", dpi=300)
@@ -285,9 +284,8 @@ def plot_catastrophic_failures(df: pd.DataFrame, output_dir: Path):
 
 
 def plot_ood_absence_roc(df: pd.DataFrame, output_dir: Path, suffix: str = ""):
-    """
-    Evaluación Cuantitativa OoD / Anomaly Detection: AUROC de Detección de Ausencia.
-    Clasificación binaria: vis == 0 (anomalía, positivo=1) vs vis > 0 (normal, negativo=0).
+    """Quantitative OoD / Anomaly Detection Evaluation: AUROC of Keypoint Absence.
+    Binary classification: vis == 0 (anomaly, positive=1) vs vis > 0 (normal, negative=0).
     """
     if df.empty or "vis" not in df.columns:
         return {}
@@ -296,7 +294,7 @@ def plot_ood_absence_roc(df: pd.DataFrame, output_dir: Path, suffix: str = ""):
     y_true = (df_valid["vis"] == 0).astype(int)
     
     if y_true.nunique() < 2 or y_true.sum() == 0 or (1 - y_true).sum() == 0:
-        log.info(f"No hay suficientes muestras de ambas clases (vis == 0 y vis > 0) para ROC OoD{suffix}.")
+        log.info(f"Insufficient samples of both classes (vis == 0 and vis > 0) for OoD ROC{suffix}.")
         return {}
 
     predictors = [
@@ -345,9 +343,8 @@ def plot_ood_absence_roc(df: pd.DataFrame, output_dir: Path, suffix: str = ""):
 
 
 def plot_ood_absence_kde(df: pd.DataFrame, output_dir: Path, suffix: str = ""):
-    """
-    Evaluación Cualitativa OoD / Anomaly Detection: Diagramas de Densidad (KDE plots).
-    Compara las distribuciones de incertidumbre para articulaciones presentes (vis > 0) vs ausentes (vis == 0).
+    """Qualitative OoD / Anomaly Detection Evaluation: Density Comparison (KDE).
+    Compares uncertainty distributions for present (vis > 0) vs absent/occluded (vis == 0) joints.
     """
     if df.empty or "vis" not in df.columns:
         return
@@ -356,7 +353,7 @@ def plot_ood_absence_kde(df: pd.DataFrame, output_dir: Path, suffix: str = ""):
     y_true = (df_valid["vis"] == 0).astype(int)
     
     if y_true.nunique() < 2 or y_true.sum() == 0 or (1 - y_true).sum() == 0:
-        log.info(f"No hay suficientes muestras de ambas clases para KDE OoD{suffix}.")
+        log.info(f"Insufficient samples of both classes for OoD KDE{suffix}.")
         return
 
     df_valid["Presence"] = np.where(df_valid["vis"] == 0, "Absent / OoD (vis == 0)", "Present (vis > 0)")
@@ -374,11 +371,11 @@ def plot_ood_absence_kde(df: pd.DataFrame, output_dir: Path, suffix: str = ""):
     ]
     
     palette = {
-        "Present (vis > 0)": "#1f77b4",       # Azul para normales
-        "Absent / OoD (vis == 0)": "#d62728"  # Rojo para anomalías / OoD
+        "Present (vis > 0)": "#1f77b4",       # Blue for in-distribution
+        "Absent / OoD (vis == 0)": "#d62728"  # Red for anomalies / OoD
     }
     
-    # 1. Gráfica combinada en cuadrícula 2x2
+    # 1. Multi-panel 2x2 grid
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
     axes = axes.flatten()
     
@@ -405,7 +402,7 @@ def plot_ood_absence_kde(df: pd.DataFrame, output_dir: Path, suffix: str = ""):
                 ax=ax
             )
         except Exception as e:
-            log.debug(f"KDE falló para {col}, usando histplot de respaldo: {e}")
+            log.debug(f"KDE failed for {col}, using fallback histplot: {e}")
             sns.histplot(
                 data=df_plot, 
                 x=col, 
@@ -427,7 +424,7 @@ def plot_ood_absence_kde(df: pd.DataFrame, output_dir: Path, suffix: str = ""):
     plt.savefig(output_dir / f"ood_absence_kde_grid{suffix}.png", dpi=300, bbox_inches="tight")
     plt.close()
     
-    # 2. Guardar también gráficas individuales de alta resolución
+    # 2. Save individual high-resolution figures
     for col, label in predictors:
         if col not in df_valid.columns or df_valid[col].isna().all():
             continue
@@ -472,7 +469,7 @@ def generate_all_plots(
     strategy: str = "max_pooling",
     tau: float = 0.5
 ):
-    """Genera todas las gráficas analíticas y las guarda en output_dir."""
+    """Generate all analytical evaluation plots and save to output_dir."""
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     
@@ -481,7 +478,7 @@ def generate_all_plots(
         "global_topological_and_failures": {}
     }
     
-    log.info("Desenrollando DataFrame por keypoints...")
+    log.info("Unrolling DataFrame by keypoints...")
     df_kp = _unroll_keypoints(df)
     
     def _get_subset_dict(name: str):
@@ -489,15 +486,15 @@ def generate_all_plots(
             metrics_summary["subsets"][name] = {}
         return metrics_summary["subsets"][name]
     
-    # Análisis de Detección de Anomalías / Out-of-Distribution (OoD) para vis == 0
-    log.info("Generando Análisis OoD de Detección de Ausencia (ROC y KDE)...")
+    # OoD Anomaly Detection Analysis for vis == 0
+    log.info("Generating OoD Absence Detection Analysis (ROC and KDE)...")
     _get_subset_dict("all").update(plot_ood_absence_roc(df_kp, output_dir, suffix="_all"))
     plot_ood_absence_kde(df_kp, output_dir, suffix="_all")
     
     df_vis = df_kp[df_kp["vis"] == 2]
     df_occ = df_kp[df_kp["vis"] == 1]
     
-    log.info("Generando Sparsification Plots y ECE (por visibilidad)...")
+    log.info("Generating Sparsification Plots and ECE (by visibility)...")
     if not df_vis.empty:
         _get_subset_dict("visible").update(plot_sparsification(df_vis, output_dir, suffix="_visible", beta=beta, strategy=strategy, tau=tau))
         _get_subset_dict("visible").update(plot_ece(df_vis, output_dir, suffix="_visible"))
@@ -513,7 +510,7 @@ def generate_all_plots(
     df_1comp = df_kp[df_kp["n_components"] == 1]
     df_2comp = df_kp[df_kp["n_components"] == 2]
     
-    log.info("Generando Sparsification Plots y ECE (por número de gaussianas)...")
+    log.info("Generating Sparsification Plots and ECE (by component count)...")
     if not df_1comp.empty:
         _get_subset_dict("1_gaussian").update(plot_sparsification(df_1comp, output_dir, suffix="_1_gaussian", beta=beta, strategy=strategy, tau=tau))
         _get_subset_dict("1_gaussian").update(plot_ece(df_1comp, output_dir, suffix="_1_gaussian"))
@@ -526,18 +523,18 @@ def generate_all_plots(
         _get_subset_dict("2_gaussians").update(plot_ood_absence_roc(df_2comp, output_dir, suffix="_2_gaussians"))
         plot_ood_absence_kde(df_2comp, output_dir, suffix="_2_gaussians")
     
-    log.info("Generando Curvas ROC de Limb Swaps (global)...")
+    log.info("Generating Limb Swap ROC curves (global)...")
     metrics_summary["global_topological_and_failures"].update(plot_limb_swap_roc(df, output_dir))
     
-    log.info("Generando Análisis de Fallos Catastróficos (global)...")
+    log.info("Generating Catastrophic Failures Analysis (global)...")
     metrics_summary["global_topological_and_failures"].update(plot_catastrophic_failures(df, output_dir))
     
-    # Guardar en formato JSON estructurado
+    # Save structured JSON
     json_path = output_dir / "evaluation_metrics.json"
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(metrics_summary, f, indent=2, ensure_ascii=False)
         
-    # Aplanar y guardar en formato CSV tabular
+    # Flatten and save tabular CSV
     csv_rows = []
     for subset_name, sub_metrics in metrics_summary.get("subsets", {}).items():
         for metric_name, val in sub_metrics.items():
@@ -555,19 +552,19 @@ def generate_all_plots(
         df_csv = pd.DataFrame(csv_rows)
         csv_path = output_dir / "evaluation_metrics.csv"
         df_csv.to_csv(csv_path, index=False, encoding="utf-8")
-        log.info(f"Métricas numéricas guardadas en {json_path} y {csv_path}")
+        log.info(f"Numeric metrics saved to {json_path} and {csv_path}")
         
     return metrics_summary
 
 
 if __name__ == "__main__":
     import sys
-    parser = argparse.ArgumentParser(description="Evaluar incertidumbre desde archivos parquet.")
-    parser.add_argument("input_path", type=str, help="Ruta al archivo parquet o directorio.")
-    parser.add_argument("--out", type=str, default=".", help="Directorio de salida para gráficas.")
-    parser.add_argument("--beta", type=float, default=0.1, help="Hiperparámetro beta para incertidumbre adaptativa.")
-    parser.add_argument("--strategy", type=str, default="max_pooling", help="Estrategia adaptativa (max_pooling, gating_k, etc.)")
-    parser.add_argument("--tau", type=float, default=0.5, help="Umbral tau para estrategia gating_tau.")
+    parser = argparse.ArgumentParser(description="Evaluate uncertainty from parquet results.")
+    parser.add_argument("input_path", type=str, help="Path to parquet file or results directory.")
+    parser.add_argument("--out", type=str, default=".", help="Output directory for plots.")
+    parser.add_argument("--beta", type=float, default=0.1, help="Beta hyperparameter for adaptive uncertainty.")
+    parser.add_argument("--strategy", type=str, default="max_pooling", help="Adaptive strategy (max_pooling, gating_k, etc.)")
+    parser.add_argument("--tau", type=float, default=0.5, help="Threshold tau for gating_tau strategy.")
     args = parser.parse_args()
     
     logging.basicConfig(level=logging.INFO)
@@ -580,11 +577,11 @@ if __name__ == "__main__":
     if input_path.is_dir():
         parquets = list(input_path.glob("*.parquet"))
         if not parquets:
-            log.error("No se encontraron archivos parquet en el directorio.")
+            log.error("No parquet files found in directory.")
             sys.exit(1)
         df = pd.concat([pd.read_parquet(p) for p in parquets], ignore_index=True)
     else:
         df = pd.read_parquet(input_path)
         
     generate_all_plots(df, args.out, beta=args.beta, strategy=args.strategy, tau=args.tau)
-    log.info(f"Análisis completado. Gráficas guardadas en {args.out}")
+    log.info(f"Analysis complete. Plots saved in {args.out}")

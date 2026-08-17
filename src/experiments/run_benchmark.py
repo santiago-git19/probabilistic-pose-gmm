@@ -76,7 +76,7 @@ def main(cfg: DictConfig) -> None:
         if parquet_path.exists() and not force_rerun:
             log.info("\n[2/3] Mass Evaluation: SKIPPED (parquet exists)")
             log.info("      Use force_rerun=true to override")
-            # Cargar parquet existente para poder loggear métricas igualmente
+            # Load existing parquet to log metrics accordingly
             import pandas as pd
             df = pd.read_parquet(parquet_path)
         else:
@@ -97,7 +97,7 @@ def main(cfg: DictConfig) -> None:
                 
             log.info("      [OK] Saved %d results to %s", len(df), parquet_path.name)
 
-        # --- wandb: log métricas escalares agregadas ----------------------
+        # --- W&B: Log aggregate scalar metrics ---------------------------
         if df is not None and not df.empty:
             oks_base_mean = float(df["oks_base"].mean()) if "oks_base" in df.columns else 0.0
             delta_oks_mean = float(df["delta_oks"].mean()) if "delta_oks" in df.columns else 0.0
@@ -153,7 +153,7 @@ def main(cfg: DictConfig) -> None:
         for group_name, ids in focus_groups.items():
             log.info("        - %-30s: %3d images", group_name, len(ids))
 
-        # --- wandb: log número de imágenes por focus group -----------------
+        # --- W&B: Log number of images per focus group --------------------
         log_metrics(
             {f"focus_group/{gn}": len(ids) for gn, ids in focus_groups.items()}
         )

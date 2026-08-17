@@ -132,10 +132,10 @@ class COCOLoader(PoseDatasetAdapter):
         smooth_kernel_size: Optional[int] = 0,
     ):
         """
-        :param data_root: Ruta base (ej: ./data/coco)
-        :param ann_file: Nombre del json (ej: annotations/person_keypoints_val2017.json)
-        :param image_dir: Carpeta de imágenes (ej: val2017)
-        :param resize_scale: Factor de escala para reducir o aumentar la resolución.
+        :param data_root: Base dataset directory (e.g., ./data/coco)
+        :param ann_file: Annotation file name (e.g., annotations/person_keypoints_val2017.json)
+        :param image_dir: Image subdirectory name (e.g., val2017)
+        :param resize_scale: Scaling factor to adjust input image resolution.
         """
         self.data_root = data_root
         self.image_dir = os.path.join(data_root, image_dir)
@@ -149,14 +149,14 @@ class COCOLoader(PoseDatasetAdapter):
         self.blur_sigma = blur_sigma
         self.smooth_kernel_size = smooth_kernel_size
         
-        # Inicializar API de COCO
-        print(f"Cargando anotaciones desde {self.ann_path}...")
+        # Initialize COCO API
+        print(f"Loading annotations from {self.ann_path}...")
         self.coco = COCO(self.ann_path)
         
-        # Filtrar solo imágenes con categoría 'person'
+        # Filter person category images only
         self.cat_ids = self.coco.getCatIds(catNms=['person'])
         self.img_ids = self.coco.getImgIds(catIds=self.cat_ids)
-        print(f"Dataset cargado: {len(self.img_ids)} imágenes encontradas.")
+        print(f"Dataset loaded: {len(self.img_ids)} images discovered.")
 
     def __len__(self) -> int:
         return len(self.img_ids)
@@ -211,26 +211,24 @@ class COCOLoader(PoseDatasetAdapter):
 
     def __iter__(self) -> Iterator[ImageSample]:
         for img_id in self.img_ids:
-            # Metadatos de la imagen
+            # Image metadata
             img_info = self.coco.loadImgs(img_id)[0]
             path = os.path.join(self.image_dir, img_info['file_name'])
             
-            # Cargar Anotaciones (Bbox y Keypoints)
+            # Load annotations (Bbox and Keypoints)
             ann_ids = self.coco.getAnnIds(imgIds=img_id, catIds=self.cat_ids, iscrowd=False)
             anns = self.coco.loadAnns(ann_ids)
             
-            # NOTA PARA TFG: 
-            # COCO tiene múltiples personas por imagen.
-            # Tu pipeline es Single-Person. Aquí seleccionamos la persona más grande (área).
+            # Single-person top-down evaluation: select person instance with maximum area
             if not anns: continue
             
             main_person = max(anns, key=lambda x: x['area'])
             bbox = main_person['bbox'] # [x, y, w, h]
             
-            # Carga perezosa (Lazy Loading) de la imagen para no saturar RAM
+            # Lazy loading to avoid RAM saturation
             img_array = cv2.imread(path)
             if img_array is None:
-                continue # Skip si la imagen está corrupta
+                continue # Skip corrupt image
             img_array = cv2.cvtColor(img_array, cv2.COLOR_BGR2RGB)
 
             keypoints = self._parse_keypoints(main_person['keypoints'], num_keypoints=17)
@@ -282,7 +280,7 @@ class CrowdPoseLoader(PoseDatasetAdapter):
         :param data_root: Base path (e.g., ./data/crowdpose)
         :param ann_file: Annotation JSON file (e.g., json/crowdpose_val.json)
         :param image_dir: Image directory (e.g., images)
-        :param resize_scale: Factor de escala para reducir o aumentar la resolución.
+        :param resize_scale: Scaling factor to adjust input image resolution.
         """
         self.data_root = data_root
         self.image_dir = os.path.join(data_root, image_dir)
@@ -297,13 +295,13 @@ class CrowdPoseLoader(PoseDatasetAdapter):
         self.smooth_kernel_size = smooth_kernel_size
         
         # Load CrowdPose annotations (COCO format compatible)
-        print(f"Cargando anotaciones desde {self.ann_path}...")
+        print(f"Loading annotations from {self.ann_path}...")
         self.coco = COCO(self.ann_path)
         
         # Filter only 'person' category images
         self.cat_ids = self.coco.getCatIds(catNms=['person'])
         self.img_ids = self.coco.getImgIds(catIds=self.cat_ids)
-        print(f"Dataset cargado: {len(self.img_ids)} imágenes encontradas.")
+        print(f"Dataset loaded: {len(self.img_ids)} images discovered.")
 
     def __len__(self) -> int:
         return len(self.img_ids)
@@ -430,7 +428,7 @@ class OCHumanLoader(PoseDatasetAdapter):
         :param data_root: Base path (e.g., ./data/ochuman)
         :param ann_file: Annotation JSON file (e.g., annotations/ochuman_coco_format_val_range_0.00_1.00.json)
         :param image_dir: Image directory (e.g., images)
-        :param resize_scale: Factor de escala para reducir o aumentar la resolución.
+        :param resize_scale: Scaling factor to adjust input image resolution.
         """
         self.data_root = data_root
         self.image_dir = os.path.join(data_root, image_dir)
@@ -445,13 +443,13 @@ class OCHumanLoader(PoseDatasetAdapter):
         self.smooth_kernel_size = smooth_kernel_size
         
         # Load OCHuman annotations (COCO format compatible)
-        print(f"Cargando anotaciones desde {self.ann_path}...")
+        print(f"Loading annotations from {self.ann_path}...")
         self.coco = COCO(self.ann_path)
         
         # Filter only 'person' category images
         self.cat_ids = self.coco.getCatIds(catNms=['person'])
         self.img_ids = self.coco.getImgIds(catIds=self.cat_ids)
-        print(f"Dataset cargado: {len(self.img_ids)} imágenes encontradas.")
+        print(f"Dataset loaded: {len(self.img_ids)} images discovered.")
 
     def __len__(self) -> int:
         return len(self.img_ids)

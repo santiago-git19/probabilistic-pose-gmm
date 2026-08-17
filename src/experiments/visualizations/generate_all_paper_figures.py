@@ -4,14 +4,14 @@ Generate All Paper Figures: High-Impact Visualizations for Elsevier / Informatio
 Generates publication-ready figures (3 candidates per figure type) with the exact technical layout,
 color hierarchy, and styling specified in the Paper Guidelines:
 
-- Fig 1: Disociación de Swaps Simétricos y Ambigüedad Bimodal (GMM vs. DARK)
-- Fig 2: El Dilema del MRF (Regularización Cinemática vs. Contaminación 2D)
-- Fig 3: Ceguera Heurística vs. Alerta Volumétrica en Detección OoD (CrowdPose / OCHuman)
-- Fig 4: Anatomía del Heatmap Poisoning en Test-Time Augmentation (TTA)
-- Fig 5: Visualización de la "Papelera" Uniforme (pi_uniform) ante la Pérdida de Resolución
+- Fig 1: Symmetric Swap Disambiguation and Bimodal Ambiguity (GMM vs. DARK)
+- Fig 2: Kinematic MRF Dilemma (Kinematic Regularization vs. 2D Heatmap Poisoning)
+- Fig 3: Heuristic Blindness vs. Volumetric Uncertainty in OoD Anomaly Detection (CrowdPose / OCHuman)
+- Fig 4: Anatomy of Heatmap Poisoning under Test-Time Augmentation (TTA)
+- Fig 5: Uniform Background Component (pi_uniform) under Resolution Degradation
 
 Output Destination:
-    C:\\Users\\Santiago estudio\\Desktop\\TFG_Informatica\\Paper\\Paper\\figures\\visualizaciones\\
+    Paper/Paper/figures/visualizaciones/
 
 Usage:
     poetry run python src/experiments/visualizations/generate_all_paper_figures.py
@@ -1153,19 +1153,19 @@ def render_figure_4(packet: Dict[str, Any], focus_kp_idx: int, out_dir: Path, ca
 
 
 # ==============================================================================
-# RENDERER FIGURA 5: Visualización de la Papelera Uniforme (pi_uniform)
+# RENDERER FIGURE 5: Uniform Background Component (pi_uniform)
 # ==============================================================================
 
 def render_figure_5(base_pkt: Dict[str, Any], out_dir: Path, cand_name: str, mode: str = "auto", focus_kp_idx: int = 10):
     """
-    FIGURA 5: Visualización de la Papelera Uniforme (pi_uniform) ante la Pérdida de Resolución.
+    FIGURE 5: Visualization of Uniform Background Component (pi_uniform) under Resolution Degradation.
     
     GridSpec(2, 5):
-    Fila 1 (Arriba): Progresión de 5 degradaciones de resolución (1.0x -> 0.5x -> 0.25x -> 0.125x -> 0.062x)
-                     con máscara púrpura proporcional a pi_uniform.
-    Fila 2 (Abajo):  Progresión del heatmap 2D para el keypoint seleccionado, muestras Monte Carlo
-                     (Gaussian inliers en ámbar vs. outliers de fondo en púrpura #D500F9 absorbidos por pi_uniform)
-                     y elipses Gaussianas ajustadas (1-sigma punteada, 2-sigma sólida en cian).
+    Row 1 (Top): Progression across 5 resolution degradation tiers (1.0x -> 0.5x -> 0.25x -> 0.125x -> 0.062x)
+                 with purple overlay proportional to pi_uniform.
+    Row 2 (Bottom): Progression of 2D heatmap for focus keypoint, Monte Carlo samples
+                    (Gaussian inliers in amber vs. background outliers in purple #D500F9 absorbed by pi_uniform)
+                    and fitted Gaussian confidence ellipses (1-sigma dotted, 2-sigma solid in cyan).
     """
     out_dir.mkdir(parents=True, exist_ok=True)
     img_rgb = find_original_image(base_pkt)

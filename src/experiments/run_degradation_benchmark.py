@@ -1,10 +1,10 @@
-"""
-Benchmark de Degradación y Evaluación de Incertidumbre
+"""Controlled Degradation Benchmark and Uncertainty Profiling Runner.
 
-Este script:
-1. Ejecuta iterativamente el modelo bajo niveles incrementales de degradación sintética (ruido, blur, contraste).
-2. Recolecta las métricas GMM ($\Sigma$, $W_2^2$, $D_{KL}$, $\pi_{uniforme}$) para cada imagen y articulación.
-3. Al finalizar, invoca los pipelines organizados de `evaluate_uncertainty.py` y `optimize_adaptive_uncertainty.py` para generar AUSE, ECE, OoD ROC, optimización beta y tablas CSV/JSON unificadas.
+This script:
+1. Iteratively runs the model under incremental synthetic degradation levels (noise, blur, resolution scaling).
+2. Collects GMM metrics (Sigma, W2, D_KL, pi_uniform) for each image and joint.
+3. Automatically triggers organized evaluation and adaptive uncertainty optimization pipelines,
+   generating AUSE, ECE, OoD ROC, and unified CSV/JSON master tables.
 """
 
 import sys
@@ -49,7 +49,7 @@ DEGRADATION_EXPERIMENTS = {
 
 @hydra.main(config_path="../../configs", config_name="config", version_base="1.2")
 def main(cfg: DictConfig) -> None:
-    log.info("Iniciando Benchmark de Degradación Controlada")
+    log.info("Starting Controlled Degradation Benchmark...")
     
     # Resolve output directory
     output_dir_str = OmegaConf.select(cfg, "logging.output_dir", default="outputs")
@@ -68,7 +68,7 @@ def main(cfg: DictConfig) -> None:
     all_results = []
     
     for exp_name, exp_overrides in DEGRADATION_EXPERIMENTS.items():
-        log.info(f"=== Ejecutando experimento: {exp_name} ===")
+        log.info(f"=== Running experiment: {exp_name} ===")
         
         # Deepcopy config for isolation
         exp_cfg = copy.deepcopy(cfg)
@@ -82,7 +82,7 @@ def main(cfg: DictConfig) -> None:
         debug_limit = OmegaConf.select(exp_cfg, "evaluation.debug_limit", default=None)
         if debug_limit is not None:
             dataloader = itertools.islice(dataloader, debug_limit)
-            log.info(f"Limitando dataloader a {debug_limit} muestras por debug_limit.")
+            log.info(f"Limiting dataloader to {debug_limit} samples via debug_limit.")
         
         # Run mass evaluation
         runner = EvaluationRunner(exp_cfg, dataloader=dataloader)
@@ -97,31 +97,31 @@ def main(cfg: DictConfig) -> None:
                     
                 parquet_path = base_out_dir / f"{exp_name}_results.parquet"
                 df.to_parquet(parquet_path, index=False)
-                log.info(f"Guardado {exp_name} en {parquet_path}")
+                log.info(f"Saved {exp_name} to {parquet_path}")
                 all_results.append(df)
         except Exception as e:
-            log.error(f"Fallo en experimento {exp_name}: {e}")
+            log.error(f"Failure in experiment {exp_name}: {e}")
 
     if not all_results:
-        log.error("No se generaron resultados en ningún experimento.")
+        log.error("No results generated across any degradation experiments.")
         return
         
     combined_df = pd.concat(all_results, ignore_index=True)
     combined_parquet = base_out_dir / "all_degradations_combined.parquet"
     combined_df.to_parquet(combined_parquet, index=False)
     
-    log.info("Ejecución finalizada. Organizando y ejecutando evaluación exhaustiva y optimización adaptativa...")
+    log.info("Execution complete. Organizing and executing uncertainty evaluation and adaptive optimization...")
     beta = OmegaConf.select(cfg, "adaptive_uncertainty.beta", default=42.2103)
     strategy = OmegaConf.select(cfg, "adaptive_uncertainty.strategy", default="max_pooling")
     tau = OmegaConf.select(cfg, "adaptive_uncertainty.tau", default=0.5)
     
-    log.info("--> 1/2: Ejecutando pipeline de evaluación (evaluate_uncertainty)...")
+    log.info("--> 1/2: Executing evaluation pipeline (evaluate_uncertainty)...")
     run_organized_evaluation_pipeline(base_out_dir, beta=beta, strategy=strategy, tau=tau)
     
-    log.info("--> 2/2: Ejecutando pipeline de optimización (optimize_adaptive_uncertainty)...")
+    log.info("--> 2/2: Executing adaptive optimization pipeline (optimize_adaptive_uncertainty)...")
     run_organized_optimization_pipeline(base_out_dir)
     
-    log.info(f"¡Proceso completado exitosamente! Todas las gráficas y archivos maestros CSV/JSON organizados en: {base_out_dir / 'graficas'}")
+    log.info(f"Process completed successfully! All plots and master summary CSV/JSON files organized in: {base_out_dir / 'graficas'}")
 
 if __name__ == "__main__":
     main()

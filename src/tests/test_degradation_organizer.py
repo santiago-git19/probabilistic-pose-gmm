@@ -22,7 +22,7 @@ from experiments.evaluate_uncertainty import COCO_KEYPOINT_NAMES
 
 @pytest.fixture
 def sample_image_df():
-    """Crea un DataFrame sintético a nivel de imagen con keypoints visibles y ausentes (vis == 0)."""
+    """Create synthetic image-level DataFrame with visible and absent (vis == 0) keypoints."""
     np.random.seed(42)
     rows = []
     for i in range(10):
@@ -50,7 +50,7 @@ def test_get_deg_info():
 
 
 def test_organized_evaluation_pipeline(sample_image_df, tmp_path):
-    """Verifica que el pipeline de evaluación organiza carpetas, prefija archivos y crea maestros combinados."""
+    """Verify evaluation pipeline organizes folders, prefixes files, and creates combined master tables."""
     deg_dir = tmp_path / "degradation_benchmark"
     deg_dir.mkdir()
     
@@ -95,7 +95,7 @@ def test_organized_evaluation_pipeline(sample_image_df, tmp_path):
 
 
 def test_organized_optimization_pipeline(sample_image_df, tmp_path):
-    """Verifica que el pipeline de optimización organiza las gráficas ause_vs_beta y resultados en carpetas."""
+    """Verify optimization pipeline organizes ause_vs_beta plots and results into subdirectories."""
     deg_dir = tmp_path / "degradation_benchmark"
     deg_dir.mkdir()
     

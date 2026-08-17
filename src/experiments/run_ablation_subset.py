@@ -1,17 +1,16 @@
-"""
-Script de ayuda para ejecutar subconjuntos específicos de experimentos.
+"""Helper script to execute specific subsets of ablation experiments.
 
-Uso:
-    # Ejecutar solo baseline + cada componente individual
+Usage:
+    # Run baseline + each individual component
     python src/experiments/run_ablation_subset.py --subset basic
 
-    # Ejecutar solo experiments de scale con diferentes configuraciones
+    # Run scale experiments across varying configurations
     python src/experiments/run_ablation_subset.py --subset scale
 
-    # Ejecutar solo combinaciones principales
+    # Run primary ablation combinations
     python src/experiments/run_ablation_subset.py --subset combined
 
-    # Ejecutar custom list
+    # Run custom list
     python src/experiments/run_ablation_subset.py --experiments "00,01,02,14,24"
 """
 

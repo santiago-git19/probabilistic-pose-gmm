@@ -10,7 +10,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-# Configurar estilo visual
+# Configure visual styling
 sns.set_theme(style="whitegrid")
 log = logging.getLogger(__name__)
 
@@ -22,28 +22,28 @@ from src.experiments.evaluate_uncertainty import _unroll_keypoints
 
 
 def compute_ause_fast(error: np.ndarray, uncertainty: np.ndarray) -> float:
-    """Versión optimizada y vectorizada del cálculo del AUSE."""
+    """Optimized and vectorized computation of AUSE."""
     n = len(error)
     if n == 0:
         return 0.0
         
     fractions = np.linspace(0, 1, min(n, 100))
     
-    # Ordenar por error (Oráculo) y por incertidumbre (Modelo)
+    # Sort by error (Oracle) and by uncertainty (Model)
     oracle_errors = error[np.argsort(-error)]
     model_errors = error[np.argsort(-uncertainty)]
     
-    # Calcular sumas acumuladas inversas para acelerar la media
+    # Compute inverse cumulative sums for fast mean computation
     oracle_cum_sum = np.cumsum(oracle_errors[::-1])[::-1]
     model_cum_sum = np.cumsum(model_errors[::-1])[::-1]
     
-    # Evitar división por cero
+    # Avoid zero division
     counts = np.arange(n, 0, -1)
     
     oracle_means = oracle_cum_sum / counts
     model_means = model_cum_sum / counts
     
-    # Mapear a las fracciones 0-1
+    # Map to fractions 0-1
     indices = np.clip((fractions * n).astype(int), 0, n - 1)
     
     ause = np.trapz(model_means[indices], fractions) - np.trapz(oracle_means[indices], fractions)
@@ -55,16 +55,16 @@ def optimize_strategies(
     beta_candidates: np.ndarray,
     tau_candidates: np.ndarray = np.array([0.01, 0.05, 0.1, 0.2, 0.5])
 ) -> Dict[str, Any]:
-    """Realiza la búsqueda en rejilla para Estrategia A (Max-Pooling) y Estrategia B (Gating)."""
+    """Perform grid search for Strategy A (Max-Pooling) and Strategy B (Gating)."""
     error = (1.0 - df["oks_ours"]).values
     error_base = (1.0 - df["oks_base"]).values if "oks_base" in df.columns else error
     
-    # Inverso de la confianza argmax: 1 - P_argmax
+    # Inverse argmax confidence: 1 - P_argmax
     u_base = (1.0 - df["base_score"]).values if "base_score" in df.columns else np.zeros_like(error)
     det_sigma = df["cov_det"].values
     n_comp = df["n_components"].values if "n_components" in df.columns else np.ones_like(error)
     
-    # 1. Evaluar baselines puros
+    # 1. Evaluate pure baselines
     ause_base = compute_ause_fast(error_base, u_base)
     ause_gmm_raw = compute_ause_fast(error, det_sigma)
     
@@ -73,13 +73,13 @@ def optimize_strategies(
     best_gating_tau = {"beta": None, "tau": None, "ause": float("inf")}
     best_softmax = {"beta": None, "ause": float("inf"), "history": []}
     
-    log.info(f"Evaluando {len(beta_candidates)} candidatos de beta...")
+    log.info(f"Evaluating {len(beta_candidates)} beta candidates...")
     
     for beta in beta_candidates:
-        # Mapeo exponencial al espacio probabilístico [0, 1]
+        # Exponential mapping to probabilistic [0, 1] space
         u_gmm = 1.0 - np.exp(-beta * det_sigma)
         
-        # --- Estrategia A: Max-Pooling ---
+        # --- Strategy A: Max-Pooling ---
         u_max_pool = np.maximum(u_base, u_gmm)
         ause_mp = compute_ause_fast(error, u_max_pool)
         best_max_pool["history"].append(ause_mp)
@@ -87,8 +87,7 @@ def optimize_strategies(
             best_max_pool["ause"] = ause_mp
             best_max_pool["beta"] = beta
             
-        # --- Estrategia B1: Gating por topología pura (K == 2) ---
-        # Si K==2 (bimodal), confiamos en u_gmm; si K==1 (unimodal), confiamos en u_base
+        # --- Strategy B1: Pure topological gating (K == 2) ---
         u_gating_k = np.where(n_comp == 2, u_gmm, u_base)
         ause_gk = compute_ause_fast(error, u_gating_k)
         best_gating_k["history"].append(ause_gk)
@@ -96,7 +95,7 @@ def optimize_strategies(
             best_gating_k["ause"] = ause_gk
             best_gating_k["beta"] = beta
             
-        # --- Estrategia B2: Gating híbrido (K == 2 o u_gmm > tau) ---
+        # --- Strategy B2: Hybrid gating (K == 2 or u_gmm > tau) ---
         for tau in tau_candidates:
             condition = (n_comp == 2) | (u_gmm > tau)
             u_gating_tau = np.where(condition, u_gmm, u_base)
@@ -106,7 +105,7 @@ def optimize_strategies(
                 best_gating_tau["beta"] = beta
                 best_gating_tau["tau"] = tau
 
-        # --- Estrategia C: Softmax Ponderado ---
+        # --- Strategy C: Weighted Softmax ---
         exp_u_base = np.exp(u_base)
         exp_u_gmm = np.exp(u_gmm)
         sum_exp = exp_u_base + exp_u_gmm
@@ -131,7 +130,7 @@ def optimize_strategies(
 
 
 def plot_optimization_curves(results: Dict[str, Any], output_dir: Path, suffix: str = ""):
-    """Genera gráfica de AUSE vs Beta para visualizar la sensibilidad del hiperparámetro."""
+    """Generate AUSE vs Beta plot to visualize hyperparameter sensitivity."""
     betas = results["beta_candidates"]
     mp_hist = results["max_pooling"]["history"]
     gk_hist = results["gating_k"]["history"]
@@ -147,7 +146,7 @@ def plot_optimization_curves(results: Dict[str, Any], output_dir: Path, suffix: 
     plt.axhline(base_ause, color="red", linestyle="--", label=f"DARK (Base) AUSE: {base_ause:.4f}")
     plt.axhline(gmm_raw_ause, color="blue", linestyle=":", label=f"Ours (Volume) AUSE: {gmm_raw_ause:.4f}")
     
-    # Marcar los puntos óptimos
+    # Mark optimal points
     plt.scatter([results['max_pooling']['beta']], [results['max_pooling']['ause']], color="magenta", s=80, zorder=5)
     plt.scatter([results['gating_k']['beta']], [results['gating_k']['ause']], color="cyan", s=80, zorder=5)
     plt.scatter([results['softmax']['beta']], [results['softmax']['ause']], color="orange", s=80, zorder=5)
@@ -165,13 +164,13 @@ def plot_optimization_curves(results: Dict[str, Any], output_dir: Path, suffix: 
 
 
 def run_grid_search(input_path: Path, output_dir: Path):
-    """Ejecuta la búsqueda de hiperparámetros y muestra informe."""
+    """Execute hyperparameter grid search and output report."""
     output_dir.mkdir(parents=True, exist_ok=True)
     
     if input_path.is_dir():
         parquets = list(input_path.glob("*.parquet"))
         if not parquets:
-            log.error(f"No se encontraron archivos parquet en {input_path}")
+            log.error(f"No parquet files found in {input_path}")
             sys.exit(1)
         df = pd.concat([pd.read_parquet(p) for p in parquets], ignore_index=True)
     else:
@@ -187,7 +186,7 @@ def run_grid_search(input_path: Path, output_dir: Path):
         log.error("Not enough valid data in parquet to optimize.")
         return
         
-    # Explorar betas en rango amplio logarítmico
+    # Explore betas over wide logarithmic range
     beta_candidates = np.logspace(-6, 4, num=300)
     
     log.info("=== GLOBAL OPTIMIZATION ===")
@@ -287,9 +286,9 @@ def run_grid_search(input_path: Path, output_dir: Path):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Grid-Search para optimizar hiperparámetro beta en incertidumbre adaptativa.")
-    parser.add_argument("input_path", type=str, help="Ruta al archivo parquet (o directorio con parquets) del benchmark.")
-    parser.add_argument("--out", type=str, default=None, help="Directorio para guardar gráficas de optimización (por defecto auto-detectado en graficas/).")
+    parser = argparse.ArgumentParser(description="Grid-Search to optimize beta hyperparameter in adaptive uncertainty.")
+    parser.add_argument("input_path", type=str, help="Path to parquet file (or directory with parquets) of benchmark.")
+    parser.add_argument("--out", type=str, default=None, help="Directory to save optimization plots (default auto-detected in graficas/).")
     args = parser.parse_args()
     
     logging.basicConfig(level=logging.INFO)

@@ -1,24 +1,22 @@
-"""
-Subida retroactiva de ejecuciones históricas a Weights & Biases.
+"""Retroactive Upload of Historical Benchmark Runs to Weights & Biases.
 
-Escanea ``outputs/`` buscando carpetas que contengan
-``results_metadata.parquet``.  Para cada una:
+Scans ``outputs/`` searching for folders containing ``results_metadata.parquet``:
 
-1. Lee ``.hydra/config.yaml`` (si existe) para reconstruir la configuración.
-2. Genera un **nombre inteligente** a partir de las variables clave
-   (modelo, TTA flip, augmentaciones fotométricas, temperatura de sampling…).
-3. Calcula métricas agregadas sobre el Parquet (OKS, NLL, Entropy, …).
-4. Crea un run en W&B con ``wandb.init`` / ``wandb.log`` / ``wandb.finish``.
+1. Reads ``.hydra/config.yaml`` (if present) to reconstruct run configuration.
+2. Generates a descriptive run name from key hyperparameter variables
+   (model architecture, TTA flip, photometric augmentations, sampling temperature).
+3. Computes aggregate scalar metrics on the Parquet dataframe (OKS, NLL, Entropy, etc.).
+4. Creates a run in W&B via ``wandb.init`` / ``wandb.log`` / ``wandb.finish``.
 
-Uso::
+Usage::
 
     cd <project_root>
     poetry run python src/experiments/upload_past_runs_to_wandb.py
 
-    # Solo un dry-run (muestra qué haría sin crear runs):
+    # Dry-run inspection without creating W&B runs:
     poetry run python src/experiments/upload_past_runs_to_wandb.py --dry-run
 
-    # Filtrar por fecha:
+    # Filter runs after a specific date:
     poetry run python src/experiments/upload_past_runs_to_wandb.py --after 2026-02-15
 """
 
@@ -42,14 +40,14 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Project root (para resolver rutas relativas)
+# Project root
 # ---------------------------------------------------------------------------
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 OUTPUTS_DIR = PROJECT_ROOT / "outputs"
 
 
 # ===================================================================
-# 1.  Descubrimiento de runs
+# 1.  Run Discovery
 # ===================================================================
 
 def discover_runs(
@@ -57,42 +55,41 @@ def discover_runs(
     *,
     after: Optional[datetime.date] = None,
 ) -> List[Path]:
-    """Busca recursivamente carpetas con ``results_metadata.parquet``.
+    """Recursively discover folders containing ``results_metadata.parquet``.
 
     Parameters
     ----------
     root : Path
-        Raíz de búsqueda (normalmente ``outputs/``).
+        Search root directory (typically ``outputs/``).
     after : date, optional
-        Solo devuelve runs cuya carpeta-padre de fecha sea >= *after*.
+        Only return runs whose date folder is >= *after*.
 
     Returns
     -------
     list[Path]
-        Directorios de run ordenados cronológicamente.
+        Chronologically sorted run directories.
     """
     runs: List[Path] = []
     for parquet in sorted(root.rglob("results_metadata.parquet")):
         run_dir = parquet.parent
 
-        # Filtro por fecha (la carpeta fecha tiene formato YYYY-MM-DD)
+        # Date filter (folder has format YYYY-MM-DD)
         if after is not None:
             try:
-                # Buscar la parte de la ruta que sea una fecha
                 date_part = _extract_date_from_path(run_dir)
                 if date_part and date_part < after:
                     continue
             except ValueError:
-                pass  # no es una carpeta de fecha, la incluimos igual
+                pass
 
         runs.append(run_dir)
 
-    log.info("Descubiertas %d carpetas con parquet en %s", len(runs), root)
+    log.info("Discovered %d folders with parquet in %s", len(runs), root)
     return runs
 
 
 def _extract_date_from_path(p: Path) -> Optional[datetime.date]:
-    """Extrae la primera parte de la ruta que matchee ``YYYY-MM-DD``."""
+    """Extract first path component matching ``YYYY-MM-DD``."""
     for part in p.relative_to(OUTPUTS_DIR).parts:
         try:
             return datetime.date.fromisoformat(part)
@@ -102,32 +99,30 @@ def _extract_date_from_path(p: Path) -> Optional[datetime.date]:
 
 
 # ===================================================================
-# 2.  Lectura de config
+# 2.  Config Loader
 # ===================================================================
 
 def load_run_config(run_dir: Path) -> Dict[str, Any]:
-    """Lee ``.hydra/config.yaml`` y lo devuelve como dict nativo.
+    """Read ``.hydra/config.yaml`` and return as native dictionary.
 
-    Si no existe, devuelve un diccionario mínimo con la ruta.
-    Las interpolaciones de Hydra (``${…}``) se eliminan para evitar
-    errores al subir a wandb.
+    If absent, returns a minimal fallback dictionary.
+    Hydra interpolations (``${…}``) are stripped to prevent errors when
+    uploading to W&B.
     """
     cfg_path = run_dir / ".hydra" / "config.yaml"
     if not cfg_path.exists():
-        log.warning("  Sin .hydra/config.yaml en %s – config parcial.", run_dir.name)
+        log.warning("  No .hydra/config.yaml found in %s - partial config.", run_dir.name)
         return {"_source": str(run_dir), "_hydra_config_missing": True}
 
     with open(cfg_path, "r", encoding="utf-8") as f:
         raw = yaml.safe_load(f)
 
-    # Limpiar interpolaciones de Hydra que wandb no puede resolver
+    # Clean Hydra interpolations that W&B cannot resolve
     return _strip_interpolations(raw) if raw else {}
 
 
 def _strip_interpolations(obj: Any) -> Any:
-    """Reemplaza valores ``${…}`` por la cadena literal (wandb no sabe
-    resolver interpolaciones de OmegaConf).
-    """
+    """Replace ``${…}`` with literal string representation."""
     if isinstance(obj, dict):
         return {k: _strip_interpolations(v) for k, v in obj.items()}
     if isinstance(obj, list):
@@ -138,25 +133,25 @@ def _strip_interpolations(obj: Any) -> Any:
 
 
 # ===================================================================
-# 3.  Generación de nombre inteligente
+# 3.  Smart Name Generation
 # ===================================================================
 
 def generate_run_name(run_dir: Path, cfg: Dict[str, Any]) -> str:
-    """Genera un nombre legible a partir de la config y la carpeta.
+    """Generate descriptive run name from config and path.
 
-    Formato: ``<model>_<tta_flip>_<photo_augs>_T<temp>_<date>_<time>``
+    Format: ``<model>_<tta_flip>_<photo_augs>_T<temp>_<date>_<time>``
 
-    Ejemplos:
+    Examples:
         ``hrnet_w32_Flip_Bright+Noise_T0.3_0211_1240``
         ``hrnet_w32_NoFlip_NoPhoto_T0.1_0209_1537``
     """
     parts: List[str] = []
 
-    # ---- Modelo --------------------------------------------------------
+    # ---- Model ---------------------------------------------------------
     model_name = _deep_get(cfg, "model.name", "unknown_model")
     parts.append(str(model_name))
 
-    # ---- TTA – Flip ----------------------------------------------------
+    # ---- TTA - Flip ----------------------------------------------------
     flip_enabled = _deep_get(cfg, "flip.enabled", False)
     flip_indices = _deep_get(cfg, "flip.flip_indices", None)
     if flip_enabled:
@@ -164,7 +159,7 @@ def generate_run_name(run_dir: Path, cfg: Dict[str, Any]) -> str:
     else:
         parts.append("NoFlip")
 
-    # ---- TTA – Photometric augmentations --------------------------------
+    # ---- TTA - Photometric augmentations --------------------------------
     photo_augs: List[str] = []
     _PHOTO_KEYS = {
         "brightness": "Bright",
@@ -174,7 +169,6 @@ def generate_run_name(run_dir: Path, cfg: Dict[str, Any]) -> str:
     }
     for key, short in _PHOTO_KEYS.items():
         if _deep_get(cfg, f"photometric.{key}.enabled", False):
-            # Añadir valor numérico cuando es informativo
             val = _photo_value(cfg, key)
             photo_augs.append(f"{short}{val}" if val else short)
 
@@ -200,17 +194,16 @@ def generate_run_name(run_dir: Path, cfg: Dict[str, Any]) -> str:
     elif aic_w and bic_w:
         parts.append(f"AIC{aic_w}+BIC{bic_w}")
 
-    # ---- Timestamp de la carpeta (compacto) -----------------------------
+    # ---- Folder timestamp ----------------------------------------------
     rel = run_dir.relative_to(OUTPUTS_DIR)
-    rel_parts = rel.parts  # e.g. ("2026-02-11", "12-40-42")
+    rel_parts = rel.parts
 
-    # Carpetas de comparisons/ ya tienen nombre significativo → usarlo
     if rel_parts[0] == "comparisons":
         return f"{model_name}_{rel_parts[-1]}" if model_name != "unknown_model" else rel_parts[-1]
 
     if len(rel_parts) >= 2:
-        date_str = rel_parts[0].replace("2026-", "").replace("-", "")   # "0211"
-        time_str = rel_parts[1].replace("-", "")[:4]                    # "1240"
+        date_str = rel_parts[0].replace("2026-", "").replace("-", "")
+        time_str = rel_parts[1].replace("-", "")[:4]
         parts.append(f"{date_str}_{time_str}")
     elif len(rel_parts) == 1:
         parts.append(rel_parts[0])
@@ -219,7 +212,7 @@ def generate_run_name(run_dir: Path, cfg: Dict[str, Any]) -> str:
 
 
 def _deep_get(d: Dict, dotted_key: str, default: Any = None) -> Any:
-    """Acceso seguro ``d['a']['b']['c']`` con clave ``'a.b.c'``."""
+    """Safe lookup ``d['a']['b']['c']`` with dotted key ``'a.b.c'``."""
     keys = dotted_key.split(".")
     node = d
     for k in keys:
@@ -233,7 +226,7 @@ def _deep_get(d: Dict, dotted_key: str, default: Any = None) -> Any:
 
 
 def _photo_value(cfg: Dict, key: str) -> str:
-    """Devuelve un sufijo numérico corto para una aug fotométrica."""
+    """Return concise numeric suffix for a photometric augmentation."""
     if key == "brightness":
         v = _deep_get(cfg, "photometric.brightness.delta")
         return str(int(v)) if v is not None else ""
@@ -252,7 +245,7 @@ def _photo_value(cfg: Dict, key: str) -> str:
 
 
 # ===================================================================
-# 4.  Cálculo de métricas
+# 4.  Metric Computation
 # ===================================================================
 
 METRIC_COLUMNS = [
@@ -262,14 +255,14 @@ METRIC_COLUMNS = [
 
 
 def compute_aggregate_metrics(run_dir: Path) -> Tuple[pd.DataFrame, Dict[str, float]]:
-    """Lee el parquet y calcula medias globales.
+    """Read parquet file and compute global aggregate metrics.
 
     Returns
     -------
     df : pd.DataFrame
-        DataFrame crudo (para posible tabla wandb).
+        Raw dataframe.
     metrics : dict
-        Métricas escalares listas para ``wandb.log``.
+        Scalar metrics dictionary ready for ``wandb.log``.
     """
     parquet_path = run_dir / "results_metadata.parquet"
     df = pd.read_parquet(parquet_path)
@@ -284,7 +277,7 @@ def compute_aggregate_metrics(run_dir: Path) -> Tuple[pd.DataFrame, Dict[str, fl
         else:
             metrics[f"{col}_mean"] = float("nan")
 
-    # Porcentaje de wins (delta_oks > 0) y regressions (delta_oks < 0)
+    # Percentage of wins (delta_oks > 0) and regressions (delta_oks < 0)
     if "delta_oks" in df.columns:
         metrics["pct_wins"] = float((df["delta_oks"] > 0).mean() * 100)
         metrics["pct_regressions"] = float((df["delta_oks"] < 0).mean() * 100)
@@ -294,7 +287,7 @@ def compute_aggregate_metrics(run_dir: Path) -> Tuple[pd.DataFrame, Dict[str, fl
 
 
 # ===================================================================
-# 5.  Subida a W&B
+# 5.  W&B Upload
 # ===================================================================
 
 def upload_run(
@@ -307,17 +300,16 @@ def upload_run(
     project: str = "tfg-pose-estimation",
     tags: Optional[List[str]] = None,
 ) -> None:
-    """Crea un run de wandb, loggea config+métricas, cierra."""
+    """Create W&B run, log config and metrics, and terminate run."""
     if dry_run:
-        log.info("  [DRY-RUN] Nombre: %s", name)
-        log.info("  [DRY-RUN] Métricas: %s", {k: f"{v:.4f}" if isinstance(v, float) else v for k, v in metrics.items()})
+        log.info("  [DRY-RUN] Name: %s", name)
+        log.info("  [DRY-RUN] Metrics: %s", {k: f"{v:.4f}" if isinstance(v, float) else v for k, v in metrics.items()})
         return
 
     import wandb
 
     run = None
     try:
-        # Generar tags automáticos
         auto_tags = _auto_tags(cfg)
         if tags:
             auto_tags.extend(tags)
@@ -333,21 +325,21 @@ def upload_run(
         )
 
         wandb.log(metrics)
-        log.info("  [OK] Run '%s' subido correctamente.", name)
+        log.info("  [OK] Run '%s' uploaded successfully.", name)
 
     except Exception:
-        log.exception("  [FAIL] Error al subir run '%s'", name)
+        log.exception("  [FAIL] Error uploading run '%s'", name)
 
     finally:
         if run is not None:
             try:
                 wandb.finish()
             except Exception:
-                log.warning("  wandb.finish() falló para '%s'", name)
+                log.warning("  wandb.finish() failed for '%s'", name)
 
 
 def _auto_tags(cfg: Dict[str, Any]) -> List[str]:
-    """Genera tags automáticos a partir de la configuración."""
+    """Generate automated metadata tags from configuration."""
     tags: List[str] = ["historical"]
 
     # Dataset
@@ -355,7 +347,7 @@ def _auto_tags(cfg: Dict[str, Any]) -> List[str]:
     if ds:
         tags.append(str(ds))
 
-    # Modelo
+    # Model
     model = _deep_get(cfg, "model.name")
     if model:
         tags.append(str(model))
@@ -371,42 +363,42 @@ def _auto_tags(cfg: Dict[str, Any]) -> List[str]:
 
 
 # ===================================================================
-# 6.  CLI y orquestación
+# 6.  CLI Orchestration
 # ===================================================================
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Sube ejecuciones históricas de outputs/ a Weights & Biases.",
+        description="Upload historical benchmark runs from outputs/ to Weights & Biases.",
     )
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Solo mostrar qué se haría, sin crear runs en wandb.",
+        help="Display planned actions without creating W&B runs.",
     )
     parser.add_argument(
         "--after",
         type=str,
         default=None,
-        help="Solo subir runs con fecha >= YYYY-MM-DD  (ej: 2026-02-15).",
+        help="Filter runs with date >= YYYY-MM-DD (e.g., 2026-02-15).",
     )
     parser.add_argument(
         "--project",
         type=str,
         default="tfg-pose-estimation",
-        help="Nombre del proyecto en W&B.",
+        help="Weights & Biases project name.",
     )
     parser.add_argument(
         "--tags",
         type=str,
         nargs="*",
         default=None,
-        help="Tags adicionales para todos los runs.",
+        help="Additional tags for all runs.",
     )
     parser.add_argument(
         "--outputs-dir",
         type=str,
         default=str(OUTPUTS_DIR),
-        help="Directorio raíz de outputs (por defecto: outputs/).",
+        help="Outputs root directory (default: outputs/).",
     )
     return parser.parse_args()
 
@@ -421,20 +413,20 @@ def main() -> None:
 
     log.info("=" * 70)
     log.info("  UPLOAD PAST RUNS TO WEIGHTS & BIASES")
-    log.info("  Directorio: %s", outputs)
+    log.info("  Directory: %s", outputs)
     if after_date:
-        log.info("  Filtro fecha: >= %s", after_date)
+        log.info("  Date filter: >= %s", after_date)
     if args.dry_run:
-        log.info("  *** MODO DRY-RUN (no se crearán runs) ***")
+        log.info("  *** DRY-RUN MODE (no runs will be created) ***")
     log.info("=" * 70)
 
-    # ---- Descubrir runs ------------------------------------------------
+    # ---- Discover runs -------------------------------------------------
     runs = discover_runs(outputs, after=after_date)
     if not runs:
-        log.warning("No se encontraron runs con results_metadata.parquet.")
+        log.warning("No runs with results_metadata.parquet found.")
         return
 
-    # ---- Procesar cada run ---------------------------------------------
+    # ---- Process each run ----------------------------------------------
     ok_count = 0
     fail_count = 0
 
@@ -447,11 +439,11 @@ def main() -> None:
             # 1) Config
             cfg = load_run_config(run_dir)
 
-            # 2) Nombre inteligente
+            # 2) Smart Name
             name = generate_run_name(run_dir, cfg)
-            log.info("  Nombre: %s", name)
+            log.info("  Name: %s", name)
 
-            # 3) Métricas
+            # 3) Metrics
             _df, metrics = compute_aggregate_metrics(run_dir)
             log.info(
                 "  n=%d | OKS_ours=%.4f | ΔOKS=%.4f | Entropy=%.4f",
@@ -461,7 +453,7 @@ def main() -> None:
                 metrics.get("entropy_mean", float("nan")),
             )
 
-            # 4) Subida
+            # 4) Upload
             upload_run(
                 run_dir,
                 cfg,
@@ -474,13 +466,13 @@ def main() -> None:
             ok_count += 1
 
         except Exception:
-            log.exception("  [FAIL] Error procesando %s", rel)
+            log.exception("  [FAIL] Error processing %s", rel)
             fail_count += 1
 
-    # ---- Resumen -------------------------------------------------------
+    # ---- Summary -------------------------------------------------------
     log.info("")
     log.info("=" * 70)
-    log.info("  RESUMEN: %d OK  |  %d FAIL  |  %d TOTAL", ok_count, fail_count, len(runs))
+    log.info("  SUMMARY: %d OK  |  %d FAIL  |  %d TOTAL", ok_count, fail_count, len(runs))
     log.info("=" * 70)
 
 

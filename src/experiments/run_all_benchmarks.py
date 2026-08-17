@@ -4,7 +4,7 @@ import os
 import time
 
 def run_experiment(model, dataset_args, log_file, timestamp):
-    """Ejecuta un experimento de hydra y guarda su salida en un archivo de log."""
+    """Execute a single Hydra experiment subprocess and pipe outputs to log file."""
     ds_name = [arg for arg in dataset_args if arg.startswith("dataset.name=")][0].split("=")[1]
     out_dir = f"outputs/benchmarks/{timestamp}_{model}_{ds_name}"
     
@@ -16,9 +16,9 @@ def run_experiment(model, dataset_args, log_file, timestamp):
         f"logging.output_dir={out_dir}"
     ] + dataset_args
     
-    print(f"[{model} | {ds_name}] Iniciando experimento... (Guardando salida en {out_dir})")
+    print(f"[{model} | {ds_name}] Starting benchmark run... (Output directory: {out_dir})")
     
-    # Redirigimos stdout y stderr al archivo log para no ensuciar la terminal
+    # Redirect stdout and stderr to dedicated log file
     with open(log_file, "w", encoding="utf-8") as f:
         process = subprocess.Popen(cmd, stdout=f, stderr=subprocess.STDOUT)
     return process
@@ -26,8 +26,7 @@ def run_experiment(model, dataset_args, log_file, timestamp):
 def main():
     models = ["hrnet_w32", "resnet50", "vitpose_small"]
     
-    # Definimos los argumentos exactos (overrides de Hydra) para cada dataset 
-    # basándonos en tu config.yaml
+    # Hydra configuration overrides for benchmark datasets
     datasets = {
         "coco": [
             "dataset.name=coco",
@@ -49,39 +48,38 @@ def main():
         ]
     }
     
-    # Carpeta para guardar los logs de las terminales virtuales
+    # Ensure logs directory exists
     os.makedirs("logs", exist_ok=True)
     
     for model in models:
         print(f"\n{'='*60}")
-        print(f"=== INICIANDO BATERÍA PARA EL MODELO: {model.upper()} ===")
+        print(f"=== STARTING BENCHMARK BATTERY FOR MODEL: {model.upper()} ===")
         print(f"{'='*60}")
         
         processes = []
-        
         timestamp = time.strftime("%Y-%m-%d_%H-%M-%S")
         
-        # 1. Crear los 3 procesos (uno por dataset) en paralelo
+        # 1. Launch 3 parallel processes (one per dataset)
         for ds_name, ds_args in datasets.items():
             log_file = f"logs/benchmark_{model}_{ds_name}.log"
             p = run_experiment(model, ds_args, log_file, timestamp)
             processes.append((ds_name, p))
             
-        # 2. Esperar a que los 3 hilos/procesos terminen antes de pasar al siguiente modelo
-        print("\nEsperando a que los 3 datasets terminen (puedes monitorear los archivos .log en la carpeta 'logs/')...")
+        # 2. Synchronize and wait for all datasets to complete
+        print("\nWaiting for parallel dataset runs to complete (monitor logs in 'logs/')...")
         for ds_name, p in processes:
-            p.wait() # Esto bloquea hasta que termine este proceso
+            p.wait()
             
             if p.returncode == 0:
-                print(f"[{model} | {ds_name}] FINALIZADO CON ÉXITO.")
+                print(f"[{model} | {ds_name}] FINISHED SUCCESSFULLY.")
             else:
-                print(f"[{model} | {ds_name}] ERROR (Código {p.returncode}). Por favor revisa 'logs/benchmark_{model}_{ds_name}.log'.")
+                print(f"[{model} | {ds_name}] ERROR (Exit code {p.returncode}). Check 'logs/benchmark_{model}_{ds_name}.log'.")
                 
-        print(f"\nBatería para {model} completada. Limpiando memoria y esperando 5 segundos...")
+        print(f"\nBattery for {model} completed. Releasing resources and waiting 5 seconds...")
         time.sleep(5)
         
     print("\n" + "*"*50)
-    print("TODOS LOS BENCHMARKS HAN FINALIZADO.")
+    print("ALL BENCHMARK BATTERIES FINISHED.")
     print("*"*50)
 
 if __name__ == "__main__":

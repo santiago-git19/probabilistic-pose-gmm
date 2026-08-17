@@ -1,9 +1,10 @@
-"""
-Script para generar gráficas de evaluación de incertidumbre por cada nivel de degradación (resolución)
-y en general, organizando toda la salida en subcarpetas por degradación y por métrica (AUC_*, ECE_*),
-y copiando el boxplot general a la raíz.
+"""Degradation Plot Organizer Script.
 
-Utiliza las rutinas de evaluate_uncertainty.py.
+Generates uncertainty evaluation plots for each degradation level (resolution),
+organizes all outputs into hierarchical subdirectories by degradation and metric
+(AUC_*, ECE_*), and copies global catastrophic failure boxplots to root.
+
+Uses evaluation routines from evaluate_uncertainty.py.
 """
 import argparse
 import logging
@@ -21,49 +22,50 @@ from src.experiments.evaluate_uncertainty import generate_all_plots
 log = logging.getLogger(__name__)
 
 def generate_organized_plots(input_dir: Path, beta: float = 42.2103, strategy: str = "max_pooling", tau: float = 0.5):
+    """Generate hierarchical plots for all degradations and organize into metric folders."""
     input_dir = Path(input_dir).resolve()
     if not input_dir.exists():
-        log.error(f"El directorio {input_dir} no existe.")
+        log.error(f"Directory {input_dir} does not exist.")
         return
 
     graficas_dir = input_dir / "graficas"
     graficas_dir.mkdir(parents=True, exist_ok=True)
 
-    # 1. Buscar archivos parquet individuales por degradación
+    # 1. Search individual parquet files per degradation
     parquets = sorted(list(input_dir.glob("*_results.parquet")))
     if not parquets:
         parquets = [p for p in sorted(list(input_dir.glob("*.parquet"))) if "metadata" not in p.name and "combined" not in p.name]
 
     if not parquets:
-        log.warning("No se encontraron archivos parquet individuales de degradación.")
+        log.warning("No individual degradation parquet files found.")
     else:
-        log.info(f"Se encontraron {len(parquets)} archivos parquet individuales. Generando gráficas en {graficas_dir} ...")
+        log.info(f"Found {len(parquets)} individual parquet files. Generating plots in {graficas_dir} ...")
 
     for p in parquets:
         deg_name = p.stem.replace("_results", "")
-        log.info(f"--> Procesando resolución / degradación: {deg_name} ({p.name})")
+        log.info(f"--> Processing resolution / degradation: {deg_name} ({p.name})")
         
         df = pd.read_parquet(p)
         if df.empty:
-            log.warning(f"El archivo {p.name} está vacío. Saltando.")
+            log.warning(f"File {p.name} is empty. Skipping.")
             continue
             
         subfolder = graficas_dir / deg_name
         subfolder.mkdir(parents=True, exist_ok=True)
         
-        # Generar gráficas usando evaluate_uncertainty.py
+        # Generate plots using evaluate_uncertainty.py
         generate_all_plots(df, subfolder, beta=beta, strategy=strategy, tau=tau)
         
-        # Renombrar archivos dentro de la subcarpeta para incluir el prefijo de la degradación
+        # Rename files in subfolder to include degradation prefix
         for img_path in list(subfolder.glob("*.png")):
             if not img_path.name.startswith(f"{deg_name}_"):
                 new_name = f"{deg_name}_{img_path.name}"
                 img_path.rename(subfolder / new_name)
 
-    # 2. Procesar el dataset general (combinado)
+    # 2. Process general (combined) dataset
     combined_parquet = input_dir / "all_degradations_combined.parquet"
     if combined_parquet.exists():
-        log.info(f"--> Procesando dataset general: General ({combined_parquet.name})")
+        log.info(f"--> Processing general dataset: General ({combined_parquet.name})")
         df_general = pd.read_parquet(combined_parquet)
         general_folder = graficas_dir / "General"
         general_folder.mkdir(parents=True, exist_ok=True)
@@ -76,9 +78,9 @@ def generate_organized_plots(input_dir: Path, beta: float = 42.2103, strategy: s
                     new_name = f"General_{img_path.name}"
                     img_path.rename(general_folder / new_name)
     else:
-        log.warning(f"No se encontró {combined_parquet.name} para generar las gráficas de 'General'.")
+        log.warning(f"Did not find {combined_parquet.name} to generate 'General' plots.")
 
-    # 3. Organizar en subcarpetas por métrica (AUC_*, ECE_*)
+    # 3. Organize into metric subfolders (AUC_*, ECE_*)
     metric_folders = {
         "AUC_1": "sparsification_curve_1_gaussian.png",
         "AUC_2": "sparsification_curve_2_gaussians.png",
@@ -92,7 +94,7 @@ def generate_organized_plots(input_dir: Path, beta: float = 42.2103, strategy: s
         "ECE_visible": "ece_calibration_visible.png",
     }
 
-    log.info("--> Organizando gráficas por métricas en carpetas AUC_* y ECE_* ...")
+    log.info("--> Organizing plots into metric folders AUC_* and ECE_* ...")
     for folder_name, pattern in metric_folders.items():
         metric_dir = graficas_dir / folder_name
         metric_dir.mkdir(parents=True, exist_ok=True)
@@ -103,20 +105,20 @@ def generate_organized_plots(input_dir: Path, beta: float = 42.2103, strategy: s
                     if img_path.name.endswith(pattern):
                         shutil.copy2(img_path, metric_dir / img_path.name)
 
-    # 4. Copiar el boxplot de fallos catastróficos general a la raíz de 'graficas'
+    # 4. Copy catastrophic failures boxplot to root
     general_folder = graficas_dir / "General"
     if general_folder.exists():
         for boxplot_path in general_folder.glob("*catastrophic_failures_boxplot.png"):
             shutil.copy2(boxplot_path, graficas_dir / boxplot_path.name)
 
-    log.info(f"\n¡Proceso completado! Todas las gráficas han sido generadas y organizadas en:\n{graficas_dir}")
+    log.info(f"\nProcessing complete! All plots generated and organized in:\n{graficas_dir}")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Generar y organizar gráficas de incertidumbre separadas por degradación y métricas.")
-    parser.add_argument("input_dir", nargs="?", default=r"C:\Users\Santiago estudio\Desktop\TFG_Informatica\Resultados_incertidumbre\General\coco\degradation_benchmark", help="Directorio con los archivos parquet.")
-    parser.add_argument("--beta", type=float, default=42.2103, help="Hiperparámetro beta para incertidumbre adaptativa.")
-    parser.add_argument("--strategy", type=str, default="max_pooling", help="Estrategia adaptativa (max_pooling, gating_k, etc.)")
-    parser.add_argument("--tau", type=float, default=0.5, help="Umbral tau para estrategia gating_tau.")
+    parser = argparse.ArgumentParser(description="Generate and organize uncertainty evaluation plots across degradation levels.")
+    parser.add_argument("input_dir", nargs="?", default=r"outputs/degradation_benchmark", help="Directory containing parquet files.")
+    parser.add_argument("--beta", type=float, default=42.2103, help="Beta hyperparameter for adaptive uncertainty.")
+    parser.add_argument("--strategy", type=str, default="max_pooling", help="Adaptive strategy (max_pooling, gating_k, etc.)")
+    parser.add_argument("--tau", type=float, default=0.5, help="Threshold tau for gating_tau strategy.")
     
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
