@@ -172,7 +172,7 @@ def _build_combined_masters(graficas_dir: Path):
                 json.dump(combined_json, f, indent=2, ensure_ascii=False)
 
 
-def run_organized_evaluation_pipeline(input_path: Path, out_arg: str = None, beta: float = 42.2103, strategy: str = "max_pooling", tau: float = 0.5) -> bool:
+def run_organized_evaluation_pipeline(input_path: Path, out_arg: str = None, beta: float = 0.1, strategy: str = "max_pooling", tau: float = 0.5) -> bool:
     """Ejecuta la evaluación jerárquica organizada por resolución y actualiza la carpeta graficas/."""
     from src.experiments.evaluate_uncertainty import generate_all_plots
     input_path = Path(input_path).resolve()
@@ -276,3 +276,37 @@ def run_organized_optimization_pipeline(input_path: Path, out_arg: str = None) -
         return True
         
     return False
+
+if __name__ == "__main__":
+    import argparse
+    import sys
+    
+    _PROJECT_ROOT = Path(__file__).resolve().parents[2]
+    if str(_PROJECT_ROOT) not in sys.path:
+        sys.path.insert(0, str(_PROJECT_ROOT))
+        
+    logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
+    
+    parser = argparse.ArgumentParser(description="Organizador de evaluaciones y optimizaciones de degradación.")
+    parser.add_argument("input_path", type=str, help="Ruta al directorio degradation_benchmark o a un archivo parquet.")
+    parser.add_argument("--out", type=str, default=None, help="Directorio de salida (opcional).")
+    parser.add_argument("--optimize", action="store_true", help="Ejecutar el pipeline de optimización en lugar del de evaluación.")
+    parser.add_argument("--force", action="store_true", help="Forzar la regeneración de los resultados (sobrescribe archivos existentes).")
+    
+    args = parser.parse_args()
+    
+    # Enable force by clearing existing jsons if requested
+    if args.force:
+        target_dir = get_graficas_dir(Path(args.input_path), Path(args.out) if args.out else None)
+        if target_dir.exists():
+            log.info(f"Modo force activado: limpiando resultados previos en {target_dir}")
+            for json_file in target_dir.rglob("*.json"):
+                if args.optimize and "optimization" in json_file.name:
+                    json_file.unlink()
+                elif not args.optimize and "evaluation" in json_file.name:
+                    json_file.unlink()
+    
+    if args.optimize:
+        run_organized_optimization_pipeline(args.input_path, args.out)
+    else:
+        run_organized_evaluation_pipeline(args.input_path, args.out)

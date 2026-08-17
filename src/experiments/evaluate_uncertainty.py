@@ -45,6 +45,7 @@ def _unroll_keypoints(df: pd.DataFrame) -> pd.DataFrame:
                         "vis": int(vis),
                         "n_components": n_comp,
                         "oks_ours": row.get(f"oks_ours_{kp}", np.nan),
+                        "oks_base": row.get(f"oks_base_{kp}", np.nan),
                         "cov_det": row.get(f"cov_det_{kp}", np.nan),
                         "uniform_weight": row.get(f"uniform_weight_{kp}", np.nan),
                         "base_score": row.get(f"base_score_{kp}", np.nan),
@@ -91,9 +92,15 @@ def plot_sparsification(
     if df.empty:
         return {}
 
-    df["error"] = 1.0 - df["oks_ours"]
+    # Calcular el error real para nuestro modelo y para el baseline
+    df["error_ours"] = 1.0 - df["oks_ours"]
+    if "oks_base" in df.columns:
+        df["error_base"] = 1.0 - df["oks_base"]
+    else:
+        df["error_base"] = df["error_ours"]
     
-    ause, fractions, oracle, model = compute_ause(df, "error", "cov_det")
+    # 1. Evaluar incertidumbre volumétrica del GMM contra el error de NUESTRO modelo
+    ause, fractions, oracle, model = compute_ause(df, "error_ours", "cov_det")
     ause_mp = None
     ause_gate = None
     ause_softmax = None
@@ -101,19 +108,19 @@ def plot_sparsification(
     ause_ent = None
     
     plt.figure(figsize=(10, 8))
-    plt.plot(fractions, model, label=f"Uncertainty (det(Sigma)) - AUSE: {ause:.4f}", color="blue", linewidth=2)
+    plt.plot(fractions, model, label=f"Ours (Volume) - AUSE: {ause:.4f}", color="blue", linewidth=2)
     plt.plot(fractions, oracle, label="Oracle (True Error)", color="black", linestyle="--", linewidth=2)
     plt.fill_between(fractions, oracle, model, color="blue", alpha=0.1)
     
-    # 1. Fusión Adaptativa: Mapeo probabilístico exponencial al espacio [0, 1]
+    # Fusión Adaptativa: Evaluar contra NUESTRO error (porque devolvemos la coordenada del GMM)
     if "base_score" in df.columns and not df["base_score"].isna().all():
         u_base = 1.0 - df["base_score"]
         u_gmm = 1.0 - np.exp(-beta * df["cov_det"])
         
         # Estrategia A: Enfoque Pesimista (Max-Pooling)
         df["u_adapt_mp"] = np.maximum(u_base, u_gmm)
-        ause_mp, _, _, model_mp = compute_ause(df, "error", "u_adapt_mp")
-        plt.plot(fractions, model_mp, label=f"Adaptive (Max-Pooling) - AUSE: {ause_mp:.4f}", color="magenta", linewidth=2)
+        ause_mp, _, _, model_mp = compute_ause(df, "error_ours", "u_adapt_mp")
+        plt.plot(fractions, model_mp, label=f"Ours (Max-Pool) - AUSE: {ause_mp:.4f}", color="magenta", linewidth=2)
         
         # Estrategia B: Interruptor Topológico (Gating)
         n_comp = df["n_components"] if "n_components" in df.columns else pd.Series(1, index=df.index)
@@ -122,8 +129,8 @@ def plot_sparsification(
         else:
             cond = (n_comp == 2)
         df["u_adapt_gate"] = np.where(cond, u_gmm, u_base)
-        ause_gate, _, _, model_gate = compute_ause(df, "error", "u_adapt_gate")
-        plt.plot(fractions, model_gate, label=f"Adaptive (Gating K=2) - AUSE: {ause_gate:.4f}", color="cyan", linewidth=2)
+        ause_gate, _, _, model_gate = compute_ause(df, "error_ours", "u_adapt_gate")
+        plt.plot(fractions, model_gate, label=f"Ours (Gating K=2) - AUSE: {ause_gate:.4f}", color="cyan", linewidth=2)
         
         # Estrategia C: Softmax Ponderado
         exp_u_base = np.exp(u_base)
@@ -132,17 +139,18 @@ def plot_sparsification(
         w_base = exp_u_base / sum_exp
         w_gmm = exp_u_gmm / sum_exp
         df["u_adapt_softmax"] = w_base * u_base + w_gmm * u_gmm
-        ause_softmax, _, _, model_softmax = compute_ause(df, "error", "u_adapt_softmax")
-        plt.plot(fractions, model_softmax, label=f"Adaptive (Softmax) - AUSE: {ause_softmax:.4f}", color="orange", linewidth=2)
+        ause_softmax, _, _, model_softmax = compute_ause(df, "error_ours", "u_adapt_softmax")
+        plt.plot(fractions, model_softmax, label=f"Ours (Softmax) - AUSE: {ause_softmax:.4f}", color="orange", linewidth=2)
     
+    # Evaluar Baselines: Evaluar su incertidumbre contra SU PROPIO error (error_base)
     if "base_score" in df.columns and not df["base_score"].isna().all():
         df["inv_base_score"] = -df["base_score"]
-        ause_base, _, _, model_base = compute_ause(df, "error", "inv_base_score")
-        plt.plot(fractions, model_base, label=f"Baseline (Argmax Prob) - AUSE: {ause_base:.4f}", color="red", linestyle=":", linewidth=2)
+        ause_base, _, _, model_base = compute_ause(df, "error_base", "inv_base_score")
+        plt.plot(fractions, model_base, label=f"DARK ($1-P_{{DARK}}$) - AUSE: {ause_base:.4f}", color="red", linestyle=":", linewidth=2)
         
     if "heatmap_entropy" in df.columns and not df["heatmap_entropy"].isna().all():
-        ause_ent, _, _, model_ent = compute_ause(df, "error", "heatmap_entropy")
-        plt.plot(fractions, model_ent, label=f"Baseline (Heatmap Entropy) - AUSE: {ause_ent:.4f}", color="green", linestyle="-.", linewidth=2)
+        ause_ent, _, _, model_ent = compute_ause(df, "error_base", "heatmap_entropy")
+        plt.plot(fractions, model_ent, label=f"DARK (Entropy) - AUSE: {ause_ent:.4f}", color="green", linestyle="-.", linewidth=2)
     
     plt.xlabel("Fraction of keypoints removed")
     plt.ylabel("Mean Error (1 - OKS) on retained keypoints")
@@ -292,10 +300,10 @@ def plot_ood_absence_roc(df: pd.DataFrame, output_dir: Path, suffix: str = ""):
         return {}
 
     predictors = [
-        ("cov_det", r"GMM $\det(\Sigma_{final})$", "blue", "auroc_cov_det"),
-        ("uniform_weight", r"GMM $\pi_{uniforme}$", "darkorange", "auroc_uniform_weight"),
-        ("heatmap_entropy", "Baseline Heatmap Entropy", "green", "auroc_heatmap_entropy"),
-        ("inv_base_score", r"Baseline $1 - P_{argmax}$", "red", "auroc_inv_base_score")
+        ("cov_det", r"Ours (Volume)", "blue", "auroc_cov_det"),
+        ("uniform_weight", r"Ours (Uniform)", "darkorange", "auroc_uniform_weight"),
+        ("heatmap_entropy", "DARK (Entropy)", "green", "auroc_heatmap_entropy"),
+        ("inv_base_score", r"DARK ($1-P_{DARK}$)", "red", "auroc_inv_base_score")
     ]
     
     plt.figure(figsize=(8, 8))
@@ -359,10 +367,10 @@ def plot_ood_absence_kde(df: pd.DataFrame, output_dir: Path, suffix: str = ""):
         df_valid["inv_base_score"] = 1.0 - df_valid["base_score"]
         
     predictors = [
-        ("log_cov_det", r"GMM $\log(1 + \det(\Sigma_{final}))$"),
-        ("uniform_weight", r"GMM $\pi_{uniforme}$"),
-        ("heatmap_entropy", "Baseline Heatmap Entropy"),
-        ("inv_base_score", r"Baseline $1 - P_{argmax}$")
+        ("log_cov_det", r"Ours (Volume)"),
+        ("uniform_weight", r"Ours (Uniform)"),
+        ("heatmap_entropy", "DARK (Entropy)"),
+        ("inv_base_score", r"DARK ($1-P_{DARK}$)")
     ]
     
     palette = {

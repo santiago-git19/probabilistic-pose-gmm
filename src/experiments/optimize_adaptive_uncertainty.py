@@ -57,6 +57,7 @@ def optimize_strategies(
 ) -> Dict[str, Any]:
     """Realiza la búsqueda en rejilla para Estrategia A (Max-Pooling) y Estrategia B (Gating)."""
     error = (1.0 - df["oks_ours"]).values
+    error_base = (1.0 - df["oks_base"]).values if "oks_base" in df.columns else error
     
     # Inverso de la confianza argmax: 1 - P_argmax
     u_base = (1.0 - df["base_score"]).values if "base_score" in df.columns else np.zeros_like(error)
@@ -64,7 +65,7 @@ def optimize_strategies(
     n_comp = df["n_components"].values if "n_components" in df.columns else np.ones_like(error)
     
     # 1. Evaluar baselines puros
-    ause_base = compute_ause_fast(error, u_base)
+    ause_base = compute_ause_fast(error_base, u_base)
     ause_gmm_raw = compute_ause_fast(error, det_sigma)
     
     best_max_pool = {"beta": None, "ause": float("inf"), "history": []}
@@ -139,28 +140,28 @@ def plot_optimization_curves(results: Dict[str, Any], output_dir: Path, suffix: 
     gmm_raw_ause = results["baseline_gmm_raw_ause"]
     
     plt.figure(figsize=(10, 6))
-    plt.semilogx(betas, mp_hist, label=f"Estrategia A (Max-Pooling) - Mejor AUSE: {results['max_pooling']['ause']:.4f}", color="magenta", linewidth=2)
-    plt.semilogx(betas, gk_hist, label=f"Estrategia B (Gating K=2) - Mejor AUSE: {results['gating_k']['ause']:.4f}", color="cyan", linewidth=2)
-    plt.semilogx(betas, sm_hist, label=f"Estrategia C (Softmax) - Mejor AUSE: {results['softmax']['ause']:.4f}", color="orange", linewidth=2)
+    plt.semilogx(betas, mp_hist, label=f"Ours (Max-Pool) - Best AUSE: {results['max_pooling']['ause']:.4f}", color="magenta", linewidth=2)
+    plt.semilogx(betas, gk_hist, label=f"Ours (Gating K=2) - Best AUSE: {results['gating_k']['ause']:.4f}", color="cyan", linewidth=2)
+    plt.semilogx(betas, sm_hist, label=f"Ours (Softmax) - Best AUSE: {results['softmax']['ause']:.4f}", color="orange", linewidth=2)
     
-    plt.axhline(base_ause, color="red", linestyle="--", label=f"Baseline Argmax AUSE: {base_ause:.4f}")
-    plt.axhline(gmm_raw_ause, color="blue", linestyle=":", label=f"GMM det(Sigma) Raw AUSE: {gmm_raw_ause:.4f}")
+    plt.axhline(base_ause, color="red", linestyle="--", label=f"DARK (Base) AUSE: {base_ause:.4f}")
+    plt.axhline(gmm_raw_ause, color="blue", linestyle=":", label=f"Ours (Volume) AUSE: {gmm_raw_ause:.4f}")
     
     # Marcar los puntos óptimos
     plt.scatter([results['max_pooling']['beta']], [results['max_pooling']['ause']], color="magenta", s=80, zorder=5)
     plt.scatter([results['gating_k']['beta']], [results['gating_k']['ause']], color="cyan", s=80, zorder=5)
     plt.scatter([results['softmax']['beta']], [results['softmax']['ause']], color="orange", s=80, zorder=5)
     
-    plt.xlabel(r"Hiperparámetro de Sensibilidad $\beta$ (escala logarítmica)")
-    plt.ylabel("Area Under Sparsification Error (AUSE - menor es mejor)")
+    plt.xlabel(r"Sensitivity Hyperparameter $\beta$ (log scale)")
+    plt.ylabel("Area Under Sparsification Error (AUSE - lower is better)")
     title_suffix = suffix.replace("_", " ").title().strip()
-    plt.title(rf"Optimización de Hiperparámetro $\beta$ ({title_suffix if title_suffix else 'Global'})")
+    plt.title(rf"$\beta$ Hyperparameter Optimization ({title_suffix if title_suffix else 'Global'})")
     plt.legend()
     
     out_file = output_dir / f"ause_vs_beta{suffix}.png"
     plt.savefig(out_file, dpi=300, bbox_inches="tight")
     plt.close()
-    log.info(f"Curva de optimización guardada en {out_file}")
+    log.info(f"Optimization curve saved to {out_file}")
 
 
 def run_grid_search(input_path: Path, output_dir: Path):
@@ -176,59 +177,59 @@ def run_grid_search(input_path: Path, output_dir: Path):
     else:
         df = pd.read_parquet(input_path)
         
-    log.info("Desenrollando keypoints para optimización...")
+    log.info("Unrolling keypoints for optimization...")
     df_kp = _unroll_keypoints(df)
     
-    # Filtrar estrictamente puntos válidos (vis > 0) para optimización AUSE geométrica
+    # Strictly filter valid points (vis > 0) for geometric AUSE optimization
     df_kp = df_kp[df_kp["vis"] > 0].dropna(subset=["oks_ours", "cov_det"]).copy()
     
     if df_kp.empty:
-        log.error("No hay suficientes datos válidos en el parquet para optimizar.")
+        log.error("Not enough valid data in parquet to optimize.")
         return
         
     # Explorar betas en rango amplio logarítmico
     beta_candidates = np.logspace(-6, 4, num=300)
     
-    log.info("=== OPTIMIZACIÓN GLOBAL ===")
+    log.info("=== GLOBAL OPTIMIZATION ===")
     res_all = optimize_strategies(df_kp, beta_candidates)
     plot_optimization_curves(res_all, output_dir, suffix="_all")
     
-    # Optimización separada para Visibles y Ocluidos
+    # Separate optimization for Visible and Occluded
     df_vis = df_kp[df_kp["vis"] == 2]
     df_occ = df_kp[df_kp["vis"] == 1]
     
     if not df_vis.empty:
-        log.info("=== OPTIMIZACIÓN KEYPOINTS VISIBLES ===")
+        log.info("=== VISIBLE KEYPOINTS OPTIMIZATION ===")
         res_vis = optimize_strategies(df_vis, beta_candidates)
         plot_optimization_curves(res_vis, output_dir, suffix="_visible")
         
     if not df_occ.empty:
-        log.info("=== OPTIMIZACIÓN KEYPOINTS OCLUIDOS ===")
+        log.info("=== OCCLUDED KEYPOINTS OPTIMIZATION ===")
         res_occ = optimize_strategies(df_occ, beta_candidates)
         plot_optimization_curves(res_occ, output_dir, suffix="_occluded")
         
     print("\n" + "="*70)
-    print("        INFORME DE OPTIMIZACIÓN DE INCERTIDUMBRE ADAPTATIVA        ")
+    print("        ADAPTIVE UNCERTAINTY OPTIMIZATION REPORT        ")
     print("="*70)
-    print(f"Total keypoints analizados: {len(df_kp)}")
+    print(f"Total analyzed keypoints: {len(df_kp)}")
     print(f"Baseline Argmax AUSE:      {res_all['baseline_argmax_ause']:.5f}")
     print(f"GMM det(Sigma) Raw AUSE:   {res_all['baseline_gmm_raw_ause']:.5f}")
     print("-" * 70)
-    print("ESTRATEGIA A (Max-Pooling): U_adapt = max(1 - P_argmax, U_gmm)")
-    print(f"  -> Mejor Beta: {res_all['max_pooling']['beta']:.6g}")
-    print(f"  -> AUSE Óptimo: {res_all['max_pooling']['ause']:.5f} (Mejora: {res_all['baseline_argmax_ause'] - res_all['max_pooling']['ause']:.5f})")
+    print("STRATEGY A (Max-Pooling): U_adapt = max(1 - P_argmax, U_gmm)")
+    print(f"  -> Best Beta: {res_all['max_pooling']['beta']:.6g}")
+    print(f"  -> Optimal AUSE: {res_all['max_pooling']['ause']:.5f} (Improvement: {res_all['baseline_argmax_ause'] - res_all['max_pooling']['ause']:.5f})")
     print("-" * 70)
-    print("ESTRATEGIA B1 (Gating Topológico Puro K=2):")
-    print(f"  -> Mejor Beta: {res_all['gating_k']['beta']:.6g}")
-    print(f"  -> AUSE Óptimo: {res_all['gating_k']['ause']:.5f} (Mejora: {res_all['baseline_argmax_ause'] - res_all['gating_k']['ause']:.5f})")
+    print("STRATEGY B1 (Pure Topological Gating K=2):")
+    print(f"  -> Best Beta: {res_all['gating_k']['beta']:.6g}")
+    print(f"  -> Optimal AUSE: {res_all['gating_k']['ause']:.5f} (Improvement: {res_all['baseline_argmax_ause'] - res_all['gating_k']['ause']:.5f})")
     print("-" * 70)
-    print("ESTRATEGIA B2 (Gating Híbrido K=2 o U_gmm > tau):")
-    print(f"  -> Mejor Beta: {res_all['gating_tau']['beta']:.6g} | Mejor Tau: {res_all['gating_tau']['tau']:.4f}")
-    print(f"  -> AUSE Óptimo: {res_all['gating_tau']['ause']:.5f} (Mejora: {res_all['baseline_argmax_ause'] - res_all['gating_tau']['ause']:.5f})")
+    print("STRATEGY B2 (Hybrid Gating K=2 or U_gmm > tau):")
+    print(f"  -> Best Beta: {res_all['gating_tau']['beta']:.6g} | Best Tau: {res_all['gating_tau']['tau']:.4f}")
+    print(f"  -> Optimal AUSE: {res_all['gating_tau']['ause']:.5f} (Improvement: {res_all['baseline_argmax_ause'] - res_all['gating_tau']['ause']:.5f})")
     print("-" * 70)
-    print("ESTRATEGIA C (Softmax Ponderado):")
-    print(f"  -> Mejor Beta: {res_all['softmax']['beta']:.6g}")
-    print(f"  -> AUSE Óptimo: {res_all['softmax']['ause']:.5f} (Mejora: {res_all['baseline_argmax_ause'] - res_all['softmax']['ause']:.5f})")
+    print("STRATEGY C (Weighted Softmax):")
+    print(f"  -> Best Beta: {res_all['softmax']['beta']:.6g}")
+    print(f"  -> Optimal AUSE: {res_all['softmax']['ause']:.5f} (Improvement: {res_all['baseline_argmax_ause'] - res_all['softmax']['ause']:.5f})")
     print("="*70 + "\n")
     
     def _extract_clean_summary(res: Dict[str, Any]) -> Dict[str, Any]:
@@ -282,7 +283,7 @@ def run_grid_search(input_path: Path, output_dir: Path):
         df_csv = pd.DataFrame(csv_rows)
         csv_path = output_dir / "optimization_results.csv"
         df_csv.to_csv(csv_path, index=False, encoding="utf-8")
-        log.info(f"Resultados de optimización guardados en {json_path} y {csv_path}")
+        log.info(f"Optimization results saved to {json_path} and {csv_path}")
 
 
 if __name__ == "__main__":
