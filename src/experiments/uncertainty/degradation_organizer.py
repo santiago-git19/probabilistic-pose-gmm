@@ -175,7 +175,7 @@ def _build_combined_masters(graficas_dir: Path):
 
 def run_organized_evaluation_pipeline(input_path: Path, out_arg: str = None, beta: float = 0.1, strategy: str = "max_pooling", tau: float = 0.5) -> bool:
     """Execute hierarchical evaluation organized by resolution tier."""
-    from src.experiments.evaluate_uncertainty import generate_all_plots
+    from src.experiments.uncertainty.evaluate_uncertainty import generate_all_plots
     input_path = Path(input_path).resolve()
     out_path = Path(out_arg) if out_arg and str(out_arg) != "." else None
     
@@ -231,7 +231,7 @@ def run_organized_evaluation_pipeline(input_path: Path, out_arg: str = None, bet
 
 def run_organized_optimization_pipeline(input_path: Path, out_arg: str = None) -> bool:
     """Execute adaptive uncertainty optimization organized by resolution tier."""
-    from src.experiments.optimize_adaptive_uncertainty import run_grid_search
+    from src.experiments.uncertainty.optimize_adaptive_uncertainty import run_grid_search
     input_path = Path(input_path).resolve()
     out_path = Path(out_arg) if out_arg and str(out_arg) != "." else None
     
@@ -282,7 +282,7 @@ if __name__ == "__main__":
     import argparse
     import sys
     
-    _PROJECT_ROOT = Path(__file__).resolve().parents[2]
+    _PROJECT_ROOT = Path(__file__).resolve().parents[3]
     if str(_PROJECT_ROOT) not in sys.path:
         sys.path.insert(0, str(_PROJECT_ROOT))
         

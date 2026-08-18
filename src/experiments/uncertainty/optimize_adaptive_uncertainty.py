@@ -14,11 +14,11 @@ import seaborn as sns
 sns.set_theme(style="whitegrid")
 log = logging.getLogger(__name__)
 
-_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+_PROJECT_ROOT = Path(__file__).resolve().parents[3]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from src.experiments.evaluate_uncertainty import _unroll_keypoints
+from src.experiments.uncertainty.evaluate_uncertainty import _unroll_keypoints
 
 
 def compute_ause_fast(error: np.ndarray, uncertainty: np.ndarray) -> float:
@@ -294,7 +294,7 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     input_path = Path(args.input_path)
     
-    from src.experiments.degradation_organizer import run_organized_optimization_pipeline
+    from src.experiments.uncertainty.degradation_organizer import run_organized_optimization_pipeline
     if run_organized_optimization_pipeline(input_path, out_arg=args.out):
         sys.exit(0)
         

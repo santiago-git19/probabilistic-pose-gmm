@@ -14,10 +14,10 @@ Design Principles:
 Usage::
 
     cd <project_root>
-    python src/experiments/compare_experiments.py
+    python src/experiments/ablations/compare_experiments.py
 
     # Quick test with debug limit:
-    python src/experiments/compare_experiments.py evaluation.debug_limit=20
+    python src/experiments/ablations/compare_experiments.py evaluation.debug_limit=20
 """
 
 from __future__ import annotations
@@ -41,7 +41,7 @@ from tqdm import tqdm
 # ---------------------------------------------------------------------------
 # Add project root to sys.path (so ``src.…`` imports work under Hydra)
 # ---------------------------------------------------------------------------
-_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+_PROJECT_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(_PROJECT_ROOT))
 
 from src.pose_uncertainty.evaluation.runner import EvaluationRunner, _build_dataloader
@@ -539,7 +539,7 @@ def _try_free_gpu() -> None:
 # Main
 # ---------------------------------------------------------------------------
 
-@hydra.main(config_path="../../configs", config_name="config", version_base="1.2")
+@hydra.main(config_path="../../../configs", config_name="config", version_base="1.2")
 def main(cfg: DictConfig) -> None:
     log.info("=" * 70)
     log.info("  EXPERIMENT COMPARISON BENCHMARK")

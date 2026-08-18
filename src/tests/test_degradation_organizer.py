@@ -11,18 +11,18 @@ if str(_PROJECT_ROOT) not in sys.path:
 if str(_PROJECT_ROOT / "src") not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT / "src"))
 
-from experiments.degradation_organizer import (
+from src.experiments.uncertainty.degradation_organizer import (
     get_graficas_dir,
     get_deg_info,
     run_organized_evaluation_pipeline,
     run_organized_optimization_pipeline
 )
-from experiments.evaluate_uncertainty import COCO_KEYPOINT_NAMES
+from src.experiments.uncertainty.evaluate_uncertainty import COCO_KEYPOINT_NAMES
 
 
 @pytest.fixture
 def sample_image_df():
-    """Create synthetic image-level DataFrame with visible and absent (vis == 0) keypoints."""
+    """Crea un DataFrame sintético a nivel de imagen con keypoints visibles y ausentes (vis == 0)."""
     np.random.seed(42)
     rows = []
     for i in range(10):
@@ -50,7 +50,7 @@ def test_get_deg_info():
 
 
 def test_organized_evaluation_pipeline(sample_image_df, tmp_path):
-    """Verify evaluation pipeline organizes folders, prefixes files, and creates combined master tables."""
+    """Verifica que el pipeline de evaluación organiza carpetas, prefija archivos y crea maestros combinados."""
     deg_dir = tmp_path / "degradation_benchmark"
     deg_dir.mkdir()
     
@@ -95,7 +95,7 @@ def test_organized_evaluation_pipeline(sample_image_df, tmp_path):
 
 
 def test_organized_optimization_pipeline(sample_image_df, tmp_path):
-    """Verify optimization pipeline organizes ause_vs_beta plots and results into subdirectories."""
+    """Verifica que el pipeline de optimización organiza las gráficas ause_vs_beta y resultados en carpetas."""
     deg_dir = tmp_path / "degradation_benchmark"
     deg_dir.mkdir()
     

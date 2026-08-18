@@ -11,13 +11,13 @@ Scans ``outputs/`` searching for folders containing ``results_metadata.parquet``
 Usage::
 
     cd <project_root>
-    poetry run python src/experiments/upload_past_runs_to_wandb.py
+    poetry run python src/experiments/tracking/upload_past_runs_to_wandb.py
 
     # Dry-run inspection without creating W&B runs:
-    poetry run python src/experiments/upload_past_runs_to_wandb.py --dry-run
+    poetry run python src/experiments/tracking/upload_past_runs_to_wandb.py --dry-run
 
     # Filter runs after a specific date:
-    poetry run python src/experiments/upload_past_runs_to_wandb.py --after 2026-02-15
+    poetry run python src/experiments/tracking/upload_past_runs_to_wandb.py --after 2026-02-15
 """
 
 from __future__ import annotations
@@ -42,7 +42,7 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Project root
 # ---------------------------------------------------------------------------
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 OUTPUTS_DIR = PROJECT_ROOT / "outputs"
 
 

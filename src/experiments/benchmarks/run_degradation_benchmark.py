@@ -18,12 +18,12 @@ from omegaconf import DictConfig, OmegaConf, open_dict
 import numpy as np
 import pandas as pd
 
-_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+_PROJECT_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(_PROJECT_ROOT))
 
 from src.pose_uncertainty.evaluation.runner import EvaluationRunner, _build_dataloader
 from src.pose_uncertainty.models.adapters import create_model_adapter
-from src.experiments.degradation_organizer import run_organized_evaluation_pipeline, run_organized_optimization_pipeline
+from src.experiments.uncertainty.degradation_organizer import run_organized_evaluation_pipeline, run_organized_optimization_pipeline
 
 log = logging.getLogger(__name__)
 
@@ -47,7 +47,7 @@ DEGRADATION_EXPERIMENTS = {
     }
 }
 
-@hydra.main(config_path="../../configs", config_name="config", version_base="1.2")
+@hydra.main(config_path="../../../configs", config_name="config", version_base="1.2")
 def main(cfg: DictConfig) -> None:
     log.info("Starting Controlled Degradation Benchmark...")
     

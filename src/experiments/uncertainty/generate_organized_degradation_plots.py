@@ -13,11 +13,11 @@ import sys
 from pathlib import Path
 import pandas as pd
 
-_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+_PROJECT_ROOT = Path(__file__).resolve().parents[3]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from src.experiments.evaluate_uncertainty import generate_all_plots
+from src.experiments.uncertainty.evaluate_uncertainty import generate_all_plots
 
 log = logging.getLogger(__name__)
 
@@ -25,13 +25,13 @@ def generate_organized_plots(input_dir: Path, beta: float = 42.2103, strategy: s
     """Generate hierarchical plots for all degradations and organize into metric folders."""
     input_dir = Path(input_dir).resolve()
     if not input_dir.exists():
-        log.error(f"Directory {input_dir} does not exist.")
+        log.error(f"El directorio {input_dir} no existe.")
         return
 
     graficas_dir = input_dir / "graficas"
     graficas_dir.mkdir(parents=True, exist_ok=True)
 
-    # 1. Search individual parquet files per degradation
+    # 1. Search individual degradation parquet files
     parquets = sorted(list(input_dir.glob("*_results.parquet")))
     if not parquets:
         parquets = [p for p in sorted(list(input_dir.glob("*.parquet"))) if "metadata" not in p.name and "combined" not in p.name]
@@ -111,7 +111,7 @@ def generate_organized_plots(input_dir: Path, beta: float = 42.2103, strategy: s
         for boxplot_path in general_folder.glob("*catastrophic_failures_boxplot.png"):
             shutil.copy2(boxplot_path, graficas_dir / boxplot_path.name)
 
-    log.info(f"\nProcessing complete! All plots generated and organized in:\n{graficas_dir}")
+    log.info(f"\n¡Proceso completado! Todas las gráficas han sido generadas y organizadas en:\n{graficas_dir}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate and organize uncertainty evaluation plots across degradation levels.")

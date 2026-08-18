@@ -1,14 +1,14 @@
 """Launch FiftyOne web UI to visualize Deep Profiling results.
 
 Usage:
-    # Launch visualization (will auto-detect latest output)
-    python src/experiments/launch_viz.py
+    # Launch visualization (will auto-detect latest output with .pkl.gz packets)
+    python src/experiments/visualizations/launch_viz.py
     
     # Specify output directory manually
-    python src/experiments/launch_viz.py data_dir="outputs/2026-02-09/14-30-00"
+    python src/experiments/visualizations/launch_viz.py data_dir="outputs/2026-07-06/12-38-24"
     
     # Use different dataset name
-    python src/experiments/launch_viz.py dataset_name="MyCustomEval"
+    python src/experiments/visualizations/launch_viz.py dataset_name="MyCustomEval"
 """
 
 import logging
@@ -19,7 +19,7 @@ import hydra
 from omegaconf import DictConfig, OmegaConf
 
 # Add project root to path
-project_root = Path(__file__).resolve().parents[2]
+project_root = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(project_root))
 
 from src.pose_uncertainty.visualization.fiftyone_loader import create_evaluation_dataset
@@ -27,7 +27,7 @@ from src.pose_uncertainty.visualization.fiftyone_loader import create_evaluation
 log = logging.getLogger(__name__)
 
 
-@hydra.main(config_path="../../configs", config_name="config", version_base="1.2")
+@hydra.main(config_path="../../../configs", config_name="config", version_base="1.2")
 def main(cfg: DictConfig) -> None:
     """
     Load .pkl.gz packets from Deep Profiling and visualize in FiftyOne.
@@ -43,19 +43,26 @@ def main(cfg: DictConfig) -> None:
     log.info("=" * 70)
     
     # ---- Determine data directory ---------------------------------------------
-    data_dir_cfg = "outputs\\2026-07-06\\12-38-24"#"outputs\\2026-02-23\\22-58-26"#"outputs\\2026-02-22\\21-53-46"#"outputs\\2026-02-18\\18-51-15"#"outputs\\2026-02-17\\23-00-36"#"outputs\\2026-02-16\\16-19-51"#"outputs\\2026-02-16\\15-47-00"#"outputs\\2026-02-16\\01-16-24"#"outputs\\2026-02-12\\18-08-52" # "outputs\\2026-02-12\\16-35-10"#"outputs\\2026-02-11\\12-40-42"# cfg.get("data_dir", None)
+    data_dir_cfg = cfg.get("data_dir", None)
     
     if data_dir_cfg is not None:
         # User explicitly provided path
         data_dir = Path(data_dir_cfg)
     else:
-        # Auto-detect: use logging.output_dir from config
-        output_dir_str = OmegaConf.select(cfg, "logging.output_dir")
-        if output_dir_str is None:
-            log.error("No output directory found in config.")
-            log.error("Either run run_benchmark.py first, or specify: data_dir=<path>")
-            sys.exit(1)
-        data_dir = Path(output_dir_str)
+        # Check config logging.output_dir first
+        output_dir_str = OmegaConf.select(cfg, "logging.output_dir", default=None)
+        if output_dir_str and list(Path(output_dir_str).glob("*.pkl.gz")):
+            data_dir = Path(output_dir_str)
+        else:
+            # Auto-detect latest directory with .pkl.gz files
+            packet_files = sorted(Path("outputs").glob("**/*.pkl.gz"), key=lambda p: p.stat().st_mtime, reverse=True)
+            if packet_files:
+                data_dir = packet_files[0].parent
+                log.info("Auto-detected latest run with analysis packets: %s", data_dir)
+            else:
+                log.error("No analysis packets (*.pkl.gz) found in outputs/.")
+                log.error("Please specify data_dir=<path> or run run_benchmark.py first.")
+                sys.exit(1)
     
     # Check existence
     if not data_dir.exists():

@@ -15,7 +15,7 @@ from sklearn.metrics import roc_curve, auc
 sns.set_theme(style="whitegrid")
 log = logging.getLogger(__name__)
 
-_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+_PROJECT_ROOT = Path(__file__).resolve().parents[3]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
@@ -570,7 +570,7 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     input_path = Path(args.input_path)
     
-    from src.experiments.degradation_organizer import run_organized_evaluation_pipeline
+    from src.experiments.uncertainty.degradation_organizer import run_organized_evaluation_pipeline
     if run_organized_evaluation_pipeline(input_path, out_arg=args.out, beta=args.beta, strategy=args.strategy, tau=args.tau):
         sys.exit(0)
         

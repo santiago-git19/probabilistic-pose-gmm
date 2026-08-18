@@ -2,16 +2,16 @@
 
 Usage:
     # Full evaluation
-    python src/experiments/run_benchmark.py
+    python src/experiments/benchmarks/run_benchmark.py
     
     # Quick test (limit to 10 images)
-    python src/experiments/run_benchmark.py evaluation.debug_limit=10
+    python src/experiments/benchmarks/run_benchmark.py evaluation.debug_limit=10
     
     # Use different model
-    python src/experiments/run_benchmark.py model=resnet50
+    python src/experiments/benchmarks/run_benchmark.py model=resnet50
     
     # Force re-run even if parquet exists
-    python src/experiments/run_benchmark.py force_rerun=true
+    python src/experiments/benchmarks/run_benchmark.py force_rerun=true
 """
 
 import logging
@@ -22,7 +22,7 @@ import hydra
 from omegaconf import DictConfig, OmegaConf
 
 # Add project root to path
-project_root = Path(__file__).resolve().parents[2]
+project_root = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(project_root))
 
 from src.pose_uncertainty.evaluation.runner import EvaluationRunner
@@ -32,7 +32,7 @@ from src.pose_uncertainty.tracking import wandb_run, log_metrics
 log = logging.getLogger(__name__)
 
 
-@hydra.main(config_path="../../configs", config_name="config", version_base="1.2")
+@hydra.main(config_path="../../../configs", config_name="config", version_base="1.2")
 def main(cfg: DictConfig) -> None:
     """
     Three-stage evaluation pipeline:
@@ -190,7 +190,7 @@ def main(cfg: DictConfig) -> None:
         log.info("  - focus_groups_ids.json     <- selected IDs")
         log.info("  - *.pkl.gz                  <- deep analysis packets")
         log.info("\nNext step: Launch FiftyOne visualization")
-        log.info("  python src/experiments/launch_viz.py")
+        log.info("  python src/experiments/visualizations/launch_viz.py")
         log.info("=" * 70)
 
 

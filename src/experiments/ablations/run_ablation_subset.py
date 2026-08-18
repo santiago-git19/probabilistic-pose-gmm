@@ -2,27 +2,27 @@
 
 Usage:
     # Run baseline + each individual component
-    python src/experiments/run_ablation_subset.py --subset basic
+    python src/experiments/ablations/run_ablation_subset.py --subset basic
 
     # Run scale experiments across varying configurations
-    python src/experiments/run_ablation_subset.py --subset scale
+    python src/experiments/ablations/run_ablation_subset.py --subset scale
 
     # Run primary ablation combinations
-    python src/experiments/run_ablation_subset.py --subset combined
+    python src/experiments/ablations/run_ablation_subset.py --subset combined
 
     # Run custom list
-    python src/experiments/run_ablation_subset.py --experiments "00,01,02,14,24"
+    python src/experiments/ablations/run_ablation_subset.py --experiments "00,01,02,14,24"
 """
 
 import sys
 from pathlib import Path
 
 # Add project root to path
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 import argparse
-from src.experiments.compare_experiments import EXPERIMENTS, main
+from src.experiments.ablations.compare_experiments import EXPERIMENTS, main
 
 # Define experiment subsets
 SUBSETS = {
@@ -134,7 +134,7 @@ if __name__ == "__main__":
     print()
 
     # Temporarily replace global EXPERIMENTS
-    import src.experiments.compare_experiments as cmp_module
+    import src.experiments.ablations.compare_experiments as cmp_module
     original_experiments = cmp_module.EXPERIMENTS.copy()
     cmp_module.EXPERIMENTS = filter_experiments(selected)
 

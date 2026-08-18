@@ -10,7 +10,7 @@ def run_experiment(model, dataset_args, log_file, timestamp):
     
     cmd = [
         sys.executable,
-        "src/experiments/run_degradation_benchmark.py",
+        "src/experiments/benchmarks/run_degradation_benchmark.py",
         f"model={model}",
         f"hydra.run.dir={out_dir}",
         f"logging.output_dir={out_dir}"
