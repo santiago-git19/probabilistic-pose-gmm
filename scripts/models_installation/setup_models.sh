@@ -1,23 +1,22 @@
 #!/bin/bash
 
-# Rutas
+# Paths
 REPO_DIR="models/mmpose"
 
-# --- 1. CLONAR EL REPOSITORIO (Git) ---
+# --- 1. CLONE REPOSITORY (Git) ---
 if [ -d "$REPO_DIR" ]; then
-    echo "[INFO] Repositorio MMPose detectado."
+    echo "[INFO] MMPose repository detected."
 else
-    echo "[INFO] Clonando MMPose (depth=1)..."
+    echo "[INFO] Cloning MMPose (depth=1)..."
     git clone --depth 1 https://github.com/open-mmlab/mmpose.git $REPO_DIR
 
-    # Aplicar el parche de compatibilidad
-    echo "[INFO] Aplicando parche a setup.py..."
+    # Apply compatibility patch
+    echo "[INFO] Applying patch to setup.py..."
     if [ -f "scripts/models_installation/patch_mmpose.py" ]; then
         python scripts/models_installation/patch_mmpose.py
     fi
 fi
 
-# --- 2. DELEGAR DESCARGAS A PYTHON ---
-# Usamos el script robusto que acabamos de crear
-echo "[INFO] Iniciando descarga de pesos con Python..."
+# --- 2. DOWNLOAD WEIGHTS VIA PYTHON ---
+echo "[INFO] Starting weights download via Python..."
 python scripts/models_installation/download_manager.py

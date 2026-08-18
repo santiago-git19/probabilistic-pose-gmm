@@ -25,7 +25,7 @@ def generate_organized_plots(input_dir: Path, beta: float = 42.2103, strategy: s
     """Generate hierarchical plots for all degradations and organize into metric folders."""
     input_dir = Path(input_dir).resolve()
     if not input_dir.exists():
-        log.error(f"El directorio {input_dir} no existe.")
+        log.error(f"Directory {input_dir} does not exist.")
         return
 
     graficas_dir = input_dir / "graficas"
