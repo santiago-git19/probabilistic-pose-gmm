@@ -10,7 +10,7 @@ This module contains scripts dedicated to candidate data mining, diagnostic pack
 | :--- | :--- | :--- | :--- |
 | **`find_figure_candidates.py`** | Analytical query engine operating on comprehensive `.parquet` tables (239 columns) across all pipeline stages (`Uncertainty`, `TTA`, `MRF`). | Parquet tables | Candidate catalog in console and JSON. |
 | **`generate_candidate_packets.py`** | On-demand targeted deep profiler for candidates mined from `.parquet`. Runs inference and serializes diagnostic `.pkl.gz` packets. | Specifications `(image_id, dataset, model, exp)` | Serialized `.pkl.gz` packets and rendered figures. |
-| **`generate_all_paper_figures.py`** | Master renderer for paper qualitative figures across keypoint uncertainty, topological disambiguation, and degradation progression. | Diagnostic `.pkl.gz` packets | Vector PDF and 300 DPI PNG figures saved to `Paper/Paper/figures/visualizaciones/`. |
+| **`generate_all_paper_figures.py`** | Master renderer for paper qualitative figures across keypoint uncertainty, topological disambiguation, and degradation progression. | Diagnostic `.pkl.gz` packets | Vector PDF and 300 DPI PNG figures saved to `outputs/figures/visualizations/`. |
 | **`export_paper_packet_figure.py`** | Modular exporter decomposing a single packet into multi-panel layouts, isolated layer elements, high-resolution crops, and numeric JSON data. | Packet file `.pkl.gz` or `--image-id` | Composite figure panel and directory of modular assets. |
 | **`mine_paper_candidates.py`** | Miner and cataloger for existing packets across `outputs/` with interactive FiftyOne visualization interface. | Directories containing `.pkl.gz` | Summary tables of topological fixes and interactive FiftyOne server. |
 

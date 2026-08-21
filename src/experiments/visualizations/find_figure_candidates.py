@@ -57,9 +57,14 @@ MODELS = ["hrnet_w32", "resnet50", "vitpose_small"]
 DATASETS = ["coco", "crowdpose", "ochuman"]
 
 # Base roots
-ROOT_UNCERTAINTY = Path(r"C:\Users\Santiago estudio\Desktop\TFG_Informatica\Paper\Resultados_Incertidumbre")
-ROOT_TTA = Path(r"C:\Users\Santiago estudio\Desktop\TFG_Informatica\Paper\Resultados_Precision\TTA")
-ROOT_MRF = Path(r"C:\Users\Santiago estudio\Desktop\TFG_Informatica\Paper\Resultados_Precision\Sin_DARK\MRF")
+paper_root = (
+    project_root.parent / "Paper"
+    if (project_root.parent / "Paper").exists()
+    else project_root / "Paper"
+)
+ROOT_UNCERTAINTY = paper_root / "Resultados_Incertidumbre"
+ROOT_TTA = paper_root / "Resultados_Precision" / "TTA"
+ROOT_MRF = paper_root / "Resultados_Precision" / "Sin_DARK" / "MRF"
 
 
 def parse_args() -> argparse.Namespace:
@@ -539,7 +544,7 @@ def main() -> None:
     print("          envenenando el promedio ingenuo de DARK, mientras que la agregación adaptativa continua descarta el veneno.")
 
     # Load annotations for bbox and GT coordinates
-    ann_root = Path(r"C:\Users\Santiago estudio\Desktop\TFG_Informatica\robust-pose-tta\data")
+    ann_root = project_root / "data"
     ann_files = {
         "coco": ann_root / "coco" / "annotations" / "person_keypoints_val2017.json",
         "crowdpose": ann_root / "crowdpose" / "json" / "crowdpose_val.json",

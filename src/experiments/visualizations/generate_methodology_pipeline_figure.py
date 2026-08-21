@@ -720,9 +720,13 @@ def render_methodology_pipeline_figure(
     # Export Vectorial PDF & 300 DPI PNG
     # =========================================================================
     target_dirs = [
-        project_root.parent / "Paper" / "Paper" / "figures" / "methodology",
-        project_root / "Paper" / "Paper" / "figures" / "methodology",
+        project_root / "outputs" / "figures" / "methodology",
     ]
+    if (project_root.parent / "Paper").exists():
+        target_dirs.append(project_root.parent / "Paper" / "Paper" / "figures" / "methodology")
+    if (project_root / "Paper").exists():
+        target_dirs.append(project_root / "Paper" / "Paper" / "figures" / "methodology")
+
     for t_dir in target_dirs:
         t_dir.mkdir(parents=True, exist_ok=True)
         pdf_path = t_dir / "methodology_pipeline_overview.pdf"
@@ -735,8 +739,14 @@ def render_methodology_pipeline_figure(
 
 
 def main() -> None:
-    out_dir = project_root.parent / "Paper" / "Paper" / "figures" / "methodology"
-    pkt_path = project_root.parent / "Paper" / "Paper" / "figures" / "visualizaciones" / "figura_2_mrf_dilemma" / "0_FAVORITA_candidato_2a_image_130" / "candidate_130_130.pkl.gz"
+    out_dir = project_root / "outputs" / "figures" / "methodology"
+    candidate_paths = [
+        project_root / "outputs" / "figures" / "visualizations" / "figura_2_mrf_dilemma" / "0_FAVORITA_candidato_2a_image_130" / "candidate_130_130.pkl.gz",
+        project_root / "outputs" / "figures" / "visualizaciones" / "figura_2_mrf_dilemma" / "0_FAVORITA_candidato_2a_image_130" / "candidate_130_130.pkl.gz",
+        project_root.parent / "Paper" / "Paper" / "figures" / "visualizaciones" / "figura_2_mrf_dilemma" / "0_FAVORITA_candidato_2a_image_130" / "candidate_130_130.pkl.gz",
+        project_root / "Paper" / "Paper" / "figures" / "visualizaciones" / "figura_2_mrf_dilemma" / "0_FAVORITA_candidato_2a_image_130" / "candidate_130_130.pkl.gz",
+    ]
+    pkt_path = next((p for p in candidate_paths if p.exists()), candidate_paths[2])
     
     logger.info("Loading Candidate 130 using exact generate_all_paper_figures.py logic...")
     pipeline_data = load_candidate_130_from_figures_pipeline(pkt_path)

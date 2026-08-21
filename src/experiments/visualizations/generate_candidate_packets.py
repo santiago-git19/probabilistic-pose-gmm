@@ -293,7 +293,9 @@ def profile_single_candidate(
 
 @hydra.main(config_path="../../../configs", config_name="config", version_base="1.2")
 def main(cfg: DictConfig) -> None:
-    target_output_base = Path(r"C:\Users\Santiago estudio\Desktop\TFG_Informatica\Paper\Paper\figures\visualizaciones")
+    target_output_base = (
+        project_root / "outputs" / "figures" / "visualizations"
+    )
     target_output_base.mkdir(parents=True, exist_ok=True)
 
     # Global pipeline mode option: "basic", "tta", or "tta_mrf" (can be overridden via `mode=basic` or `+mode=basic`)

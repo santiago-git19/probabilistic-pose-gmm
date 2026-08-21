@@ -11,7 +11,7 @@ color hierarchy, and styling specified in the Paper Guidelines:
 - Fig 5: Uniform Background Component (pi_uniform) under Resolution Degradation
 
 Output Destination:
-    Paper/Paper/figures/visualizaciones/
+    outputs/figures/visualizations/
 
 Usage:
     poetry run python src/experiments/visualizations/generate_all_paper_figures.py
@@ -61,7 +61,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger(__name__)
 
 # Destination Directory
-TARGET_OUTPUT_ROOT = Path(r"C:\Users\Santiago estudio\Desktop\TFG_Informatica\Paper\Paper\figures\visualizaciones")
+TARGET_OUTPUT_ROOT = project_root / "outputs" / "figures" / "visualizations"
 
 # Global Vector Style Palette
 COLOR_GT = "#00E676"         # Emerald Green
