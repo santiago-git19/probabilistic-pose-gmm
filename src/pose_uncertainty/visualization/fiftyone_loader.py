@@ -1470,6 +1470,29 @@ def _split_keypoints_by_visibility(
     return result
 
 
+def _normalise_visibility_code(code: Any) -> int:
+    """Normalize raw input into valid COCO visibility code (0, 1, 2)."""
+    try:
+        c = int(code)
+        if c in (0, 1, 2):
+            return c
+    except (TypeError, ValueError):
+        pass
+    return 2
+
+
+def _visibility_payload(code: Any) -> Tuple[int, str, List[str]]:
+    """Return (vis_code, label, tags_list) with backwards-compatible aliases."""
+    vis_code = _normalise_visibility_code(code)
+    label = _VIS_LABELS.get(vis_code, "visible")
+    tags = [label]
+    if vis_code == 1:
+        tags.append("occlusion")
+    elif vis_code == 0:
+        tags.append("unlabeled")
+    return vis_code, label, tags
+
+
 def _to_fo_keypoints_labeled(
     coords: npt.NDArray,
     img_w: int,
@@ -1493,20 +1516,22 @@ def _to_fo_keypoints_labeled(
         y_norm = float(np.clip(coords[k, 1] / img_h, 0.0, 1.0))
 
         # Visibility from GT (or from the 3rd col of coords itself)
-        vis_code = 2  # default visible
+        vis_code_raw = 2
         if gt_coords_with_vis is not None and k < gt_coords_with_vis.shape[0]:
-            vis_code = int(gt_coords_with_vis[k, 2]) if gt_coords_with_vis.shape[1] >= 3 else 2
+            vis_code_raw = gt_coords_with_vis[k, 2] if gt_coords_with_vis.shape[1] >= 3 else 2
         elif coords.shape[1] >= 3:
-            vis_code = int(coords[k, 2])
-        vis_label = _VIS_LABELS.get(vis_code, "unknown")
+            vis_code_raw = coords[k, 2]
+
+        vis_code, vis_label, vis_tags = _visibility_payload(vis_code_raw)
 
         kp = fo.Keypoint(
             points=[(x_norm, y_norm)],
             label=COCO_KP_NAMES[k],
         )
+        kp["keypoint_name"] = COCO_KP_NAMES[k]
         kp["visibility"] = vis_label
         kp["visibility_code"] = vis_code
-        kp.tags = [vis_label, COCO_KP_NAMES[k]]
+        kp.tags = [vis_label, COCO_KP_NAMES[k]] + [t for t in vis_tags if t not in (vis_label, COCO_KP_NAMES[k])]
         keypoints.append(kp)
 
     return fo.Keypoints(keypoints=keypoints)
@@ -1573,17 +1598,21 @@ def _ellipses_per_kp_labeled(
             )
             for v in verts
         ]
-        tags = [COCO_KP_NAMES[k]]
+        vis_code_raw = 2
         if gt_coords_with_vis is not None and k < gt_coords_with_vis.shape[0]:
-            vis_code = int(gt_coords_with_vis[k, 2]) if gt_coords_with_vis.shape[1] >= 3 else 2
-            tags.append(_VIS_LABELS.get(vis_code, "unknown"))
+            vis_code_raw = gt_coords_with_vis[k, 2] if gt_coords_with_vis.shape[1] >= 3 else 2
+        vis_code, vis_label, vis_tags = _visibility_payload(vis_code_raw)
+
         poly = fo.Polyline(
             points=[pts],
             closed=True,
             filled=False,
             label=COCO_KP_NAMES[k],
         )
-        poly.tags = tags
+        poly["visibility"] = vis_label
+        poly["visibility_code"] = vis_code
+        poly["keypoint_name"] = COCO_KP_NAMES[k]
+        poly.tags = [COCO_KP_NAMES[k], vis_label] + [t for t in vis_tags if t not in (vis_label, COCO_KP_NAMES[k])]
         polys.append(poly)
 
     return fo.Polylines(polylines=polys) if polys else None

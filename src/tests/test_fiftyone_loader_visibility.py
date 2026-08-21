@@ -94,14 +94,14 @@ def test_to_fo_keypoints_labeled_uses_gt_visibility_over_coords_column():
     out = loader._to_fo_keypoints_labeled(coords, img_w=100, img_h=100, fo=_DummyFO, gt_coords_with_vis=gt)
     kp0, kp1 = out.keypoints
 
-    assert kp0.label == "not_labeled"
+    assert kp0.label == "Nose"
     assert kp0["keypoint_name"] == "Nose"
     assert kp0["visibility_code"] == 0
     assert kp0["visibility"] == "not_labeled"
     assert "not_labeled" in kp0.tags
     assert "unlabeled" in kp0.tags
 
-    assert kp1.label == "occluded"
+    assert kp1.label == "L_Eye"
     assert kp1["keypoint_name"] == "L_Eye"
     assert kp1["visibility_code"] == 1
     assert kp1["visibility"] == "occluded"
@@ -115,7 +115,7 @@ def test_to_fo_keypoints_labeled_invalid_visibility_falls_back_to_visible():
     out = loader._to_fo_keypoints_labeled(coords, img_w=100, img_h=100, fo=_DummyFO)
     kp = out.keypoints[0]
 
-    assert kp.label == "visible"
+    assert kp.label == "Nose"
     assert kp["visibility_code"] == 2
     assert kp["visibility"] == "visible"
     assert "visible" in kp.tags
@@ -200,7 +200,7 @@ def test_fiftyone_filter_labels_filters_keypoints_by_visibility_tag():
         ds.delete()
 
 
-def test_fiftyone_filter_labels_filters_keypoints_by_visibility_label():
+def test_fiftyone_filter_labels_filters_keypoints_by_visibility_field():
     fo = pytest.importorskip("fiftyone")
     F = fo.ViewField
 
@@ -225,11 +225,11 @@ def test_fiftyone_filter_labels_filters_keypoints_by_visibility_label():
         sample["ground_truth"] = keypoints
         ds.add_sample(sample)
 
-        filtered = ds.filter_labels("ground_truth", F("label") == "occluded")
+        filtered = ds.filter_labels("ground_truth", F("visibility") == "occluded")
         out = filtered.first()["ground_truth"].keypoints
 
         assert len(out) == 1
-        assert out[0].label == "occluded"
+        assert out[0].label == "L_Eye"
         assert out[0]["visibility"] == "occluded"
     finally:
         ds.delete()
