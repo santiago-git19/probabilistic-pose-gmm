@@ -163,14 +163,14 @@ PARQUET_FIGURE_CANDIDATES = [
     #{"fig": "figura_5_uniform_trash", "cand": "candidato_2_image_402118", "image_id": 402118, "dataset": "coco", "model": "hrnet_w32", "exp": "00_Baseline_Clean", "kp": 13, "mode": "basic"},
     #{"fig": "figura_5_uniform_trash", "cand": "candidato_3_image_482", "image_id": 482, "dataset": "ochuman", "model": "hrnet_w32", "exp": "00_Baseline_Clean", "kp": 15, "mode": "basic"},
     {
-        "fig": "figura_4_heatmap_poisoning",
-        "cand": "candidato_2_image_251",
-        "image_id": 251,
+        "fig": "figura_1_swaps",
+        "cand": "01_MEJORADA_candidato_image_460",
+        "image_id": 460,
         "dataset": "ochuman",
-        "model": "vitpose_small",
-        "exp": "03_Resize_High",
-        "kp": 13,  # Left Knee (Exits 0.85x bbox by 5.1px, HM Entropy=7.05 nats, OKS Base=0.799, TTA=0.750, Ours=0.821, Delta=+0.071)
-        "mode": "tta",
+        "model": "resnet50",
+        "exp": "02_Resize_Medium",
+        "kp": 15,          # Articulación enfocada (tobillo/left_ankle)
+        "mode": "basic",   # Modo básico sin TTA para mostrar el swap simétrico puro
     },
 ]
 

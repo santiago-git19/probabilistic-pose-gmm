@@ -475,7 +475,7 @@ def render_figure_1(packet: Dict[str, Any], focus_kp_idx: int, out_dir: Path, ca
         if len(v2) > 0:
             ax_b.add_patch(patches.Polygon(v2, closed=True, fill=False, edgecolor=COLOR_ELLIPSE_2S, lw=2.0, linestyle="-", zorder=7))
             w_val = float(w_focus[j]) if j < len(w_focus) else 1.0
-            label_text = f"Moda {j+1}: $w_{j+1}={w_val:.2f}$"
+            label_text = f"Mode {j+1}: $w_{j+1}={w_val:.2f}$"
             ax_b.text(m_focus[j, 0] + 1.5, m_focus[j, 1] - 3.5, label_text,
                       color=COLOR_ELLIPSE_2S, fontsize=8.5, fontweight="bold",
                       bbox=dict(boxstyle="round,pad=0.2", facecolor="black", alpha=0.80, edgecolor="none"), zorder=12)
