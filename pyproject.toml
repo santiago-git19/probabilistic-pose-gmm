@@ -65,3 +65,14 @@ python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
+
+
+[tool.pytest.ini_options]
+testpaths = ["src/tests"]
+addopts = "-ra --strict-markers --ignore=models/mmpose"
+python_files = "test_*.py"
+markers = [
+    "slow: marks tests as computationally intensive (deselect with '-m \"not slow\"')",
+    "requires_mmpose: marks tests requiring mmpose backend weights",
+    "integration: end-to-end integration tests",
+]
