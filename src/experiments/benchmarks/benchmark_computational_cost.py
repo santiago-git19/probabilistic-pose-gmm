@@ -550,7 +550,10 @@ def main() -> None:
     parser.add_argument("--device", type=str, default="cuda", help="Target execution device (cuda or cpu)")
     parser.add_argument("--num-warmup", type=int, default=10, help="Number of warmup iterations")
     parser.add_argument("--num-trials", type=int, default=25, help="Number of measurement trials")
-    parser.add_argument("--out-dir", type=str, default=r"C:\Users\Santiago estudio\Desktop\TFG_Informatica\Paper\Paper\figures\computational_cost", help="Output directory")
+    default_out_dir = (
+        project_root / "outputs" / "figures" / "computational_cost"
+    )
+    parser.add_argument("--out-dir", type=str, default=str(default_out_dir), help="Output directory")
 
     args = parser.parse_args()
     out_dir = Path(args.out_dir)
