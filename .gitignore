@@ -19,9 +19,18 @@ outputs/
 models/
 *.pth
 *.ckpt
+*.tar.gz
+*.zip
 
 # AI-generated documents 
 docs/
 
+# Temporary scratch & experiments
+scratch/
+**/scratch/
+
 # Project specifics
 wandb/
+.pytest_cache/
+.coverage
+htmlcov/
