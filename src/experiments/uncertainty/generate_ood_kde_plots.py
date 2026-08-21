@@ -185,10 +185,17 @@ def plot_single_dataset_kde(df: pd.DataFrame, output_dir: Path, model_name: str,
 def main():
     parser = argparse.ArgumentParser(description="Generate 2x2 OoD Absence Detection KDE Plots with large typography and unified global legend.")
     parser.add_argument("--model", type=str, default="hrnet_w32", help="Model name (default: hrnet_w32)")
-    parser.add_argument("--out-dir", type=str, default=r"C:\Users\Santiago estudio\Desktop\TFG_Informatica\Paper\Paper\figures\uncertainty\ood_kde_individual", help="Output directory")
+    default_out_dir = (
+        _PROJECT_ROOT / "outputs" / "figures" / "uncertainty" / "ood_kde_individual"
+    )
+    parser.add_argument("--out-dir", type=str, default=str(default_out_dir), help="Output directory")
     args = parser.parse_args()
 
-    paper_root = Path(r"C:\Users\Santiago estudio\Desktop\TFG_Informatica\Paper")
+    paper_root = (
+        _PROJECT_ROOT.parent / "Paper"
+        if (_PROJECT_ROOT.parent / "Paper").exists()
+        else _PROJECT_ROOT / "Paper"
+    )
     output_dir = Path(args.out_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 

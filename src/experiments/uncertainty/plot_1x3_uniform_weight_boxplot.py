@@ -194,11 +194,17 @@ def render_1x3_uniform_weight_boxplot(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate 1x3 publication boxplot figures for uniform weight distribution.")
-    parser.add_argument("--model", type=str, default="hrnet_w32", help="Model backbone (default: hrnet_w32)")
-    parser.add_argument("--out-dir", type=str, default=r"C:\Users\Santiago estudio\Desktop\TFG_Informatica\Paper\Paper\figures\uncertainty\catastrophic_failures", help="Output directory")
+    default_out_dir = (
+        project_root / "outputs" / "figures" / "uncertainty" / "catastrophic_failures"
+    )
+    parser.add_argument("--out-dir", type=str, default=str(default_out_dir), help="Output directory")
     args = parser.parse_args()
 
-    paper_root = Path(r"C:\Users\Santiago estudio\Desktop\TFG_Informatica\Paper")
+    paper_root = (
+        project_root.parent / "Paper"
+        if (project_root.parent / "Paper").exists()
+        else project_root / "Paper"
+    )
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 

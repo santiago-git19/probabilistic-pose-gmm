@@ -217,10 +217,17 @@ def generate_individual_dataset_ece_plots(
 def main():
     parser = argparse.ArgumentParser(description="Generate ECE Calibration Plots for HRNet-W32 across datasets and topological regimes.")
     parser.add_argument("--model", type=str, default="hrnet_w32", help="Model name (default: hrnet_w32)")
-    parser.add_argument("--out-dir", type=str, default=r"C:\Users\Santiago estudio\Desktop\TFG_Informatica\Paper\Paper\figures\uncertainty\ece_calibration_custom", help="Output directory")
+    default_out_dir = (
+        _PROJECT_ROOT / "outputs" / "figures" / "uncertainty" / "ece_calibration_custom"
+    )
+    parser.add_argument("--out-dir", type=str, default=str(default_out_dir), help="Output directory")
     args = parser.parse_args()
 
-    paper_root = Path(r"C:\Users\Santiago estudio\Desktop\TFG_Informatica\Paper")
+    paper_root = (
+        _PROJECT_ROOT.parent / "Paper"
+        if (_PROJECT_ROOT.parent / "Paper").exists()
+        else _PROJECT_ROOT / "Paper"
+    )
     output_dir = Path(args.out_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 

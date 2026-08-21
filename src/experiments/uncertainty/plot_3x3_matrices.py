@@ -622,10 +622,17 @@ def plot_3x3_sparsification_matrix(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate 3x3 publication matrices calibrated for 100% zoom legibility.")
     parser.add_argument("--models", nargs="+", default=["hrnet_w32", "resnet50", "vitpose_small"], help="Model backbones to render")
-    parser.add_argument("--out-dir", type=str, default=r"C:\Users\Santiago estudio\Desktop\TFG_Informatica\Paper\Paper\figures\uncertainty\matrices_3x3", help="Output directory")
+    default_out_dir = (
+        project_root / "outputs" / "figures" / "uncertainty" / "matrices_3x3"
+    )
+    parser.add_argument("--out-dir", type=str, default=str(default_out_dir), help="Output directory")
     args = parser.parse_args()
 
-    paper_root = Path(r"C:\Users\Santiago estudio\Desktop\TFG_Informatica\Paper")
+    paper_root = (
+        project_root.parent / "Paper"
+        if (project_root.parent / "Paper").exists()
+        else project_root / "Paper"
+    )
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 

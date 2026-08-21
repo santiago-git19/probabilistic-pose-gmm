@@ -325,11 +325,17 @@ def render_1x3_beta_optimization(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate 1x3 publication figures for beta hyperparameter optimization.")
     parser.add_argument("--model", type=str, default="hrnet_w32", help="Model backbone (default: hrnet_w32)")
-    parser.add_argument("--dataset", type=str, default="coco", help="Dataset name (default: coco)")
-    parser.add_argument("--out-dir", type=str, default=r"C:\Users\Santiago estudio\Desktop\TFG_Informatica\Paper\Paper\figures\uncertainty\beta_optimization", help="Output directory")
+    default_out_dir = (
+        project_root / "outputs" / "figures" / "uncertainty" / "beta_optimization"
+    )
+    parser.add_argument("--out-dir", type=str, default=str(default_out_dir), help="Output directory")
     args = parser.parse_args()
 
-    paper_root = Path(r"C:\Users\Santiago estudio\Desktop\TFG_Informatica\Paper")
+    paper_root = (
+        project_root.parent / "Paper"
+        if (project_root.parent / "Paper").exists()
+        else project_root / "Paper"
+    )
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
