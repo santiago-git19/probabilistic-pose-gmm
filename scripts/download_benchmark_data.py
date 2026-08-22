@@ -98,8 +98,39 @@ def download_and_extract(
     logger.info("Downloading benchmark parquet package from: %s", url)
     temp_zip = target_dir / "temp_benchmark_data.zip"
     try:
-        urllib.request.urlretrieve(url, temp_zip, reporthook=download_progress_hook)
-        print() # newline after progress hook
+        import os
+        import ssl
+
+        headers = {"User-Agent": "Mozilla/5.0"}
+        token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+
+        req = urllib.request.Request(url, headers=headers)
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+
+        with urllib.request.urlopen(req, context=ctx, timeout=60) as resp:
+            total_size = int(resp.headers.get("Content-Length", 0))
+            downloaded = 0
+            block_size = 64 * 1024
+
+            with open(temp_zip, "wb") as f_out:
+                while True:
+                    chunk = resp.read(block_size)
+                    if not chunk:
+                        break
+                    f_out.write(chunk)
+                    downloaded += len(chunk)
+                    if total_size > 0:
+                        pct = min(100.0, (downloaded / total_size) * 100.0)
+                        sys.stdout.write(
+                            f"\rDownloading benchmark data: {pct:.1f}% ({downloaded / (1024*1024):.1f} / {total_size / (1024*1024):.1f} MB)"
+                        )
+                        sys.stdout.flush()
+
+        print()  # newline after progress hook
         logger.info("Extracting %s to %s...", temp_zip.name, target_dir)
         with zipfile.ZipFile(temp_zip, "r") as zf:
             zf.extractall(target_dir)
@@ -108,6 +139,7 @@ def download_and_extract(
         return True
     except Exception as e:
         logger.error("Failed to download benchmark data from %s: %s", url, e)
+        logger.info("Note: If the repository is currently Private, assets require authentication or making the repository Public.")
         logger.info("Tip: If you have the dataset locally in Paper/, run 'poetry run python scripts/package_benchmark_data.py'")
         if temp_zip.exists():
             temp_zip.unlink()
