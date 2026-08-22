@@ -54,12 +54,13 @@ def step_clone_and_patch_mmpose():
             print(f"[ERROR] Failed to clone MMPose repository: {e}")
             sys.exit(1)
 
-    # Apply compatibility patch
-    print("[INFO] Applying PEP 517 compatibility patch to MMPose setup.py...")
+    # Apply compatibility and model config patches (PEP 517 + DARK / UDP codecs)
+    print("[INFO] Applying PEP 517 compatibility and DARK/UDP codec patches...")
     try:
-        from patch_mmpose import patch_setup_py
+        from patch_mmpose import patch_setup_py, patch_mmpose_configs
 
         patch_setup_py()
+        patch_mmpose_configs()
     except ImportError:
         # Fallback to subprocess
         subprocess.run([sys.executable, str(PATCH_SCRIPT)], check=True)

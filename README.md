@@ -303,6 +303,12 @@ poetry run python src/tests/check_env.py
 poetry run pytest src/tests --ignore=models/mmpose -v
 ```
 
+> [!NOTE]
+> **Automatic DARK & UDP Codec Patching**:
+> The environment setup script (`scripts/models_installation/setup_models.py` / `patch_mmpose.py`) automatically patches the cloned MMPose config files to enable exact sub-pixel decoders:
+> - **HRNet-W32 & ResNet-50**: Configures `codec = dict(type='MSRAHeatmap', ..., unbiased=True)` to enable the **DARK (Distribution-Aware Coordinate Representation)** Taylor-expansion sub-pixel decoder.
+> - **ViTPose-Small**: Configures `codec = dict(type='UDPHeatmap', ...)` to enable the **UDP (Unbiased Data Processing)** codec.
+
 > **Automated Makefile Alternative (Linux / macOS / Git Bash)**:
 > ```bash
 > make setup-models
