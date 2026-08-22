@@ -971,17 +971,6 @@ files = [
 ]
 
 [[package]]
-name = "chumpy"
-version = "0.70"
-description = "chumpy"
-optional = false
-python-versions = "*"
-groups = ["main"]
-files = [
-    {file = "chumpy-0.70.tar.gz", hash = "sha256:a0275c2018784ca1302875567dc81761f5fd469fab9f3ac0f3e7c39e9180350a"},
-]
-
-[[package]]
 name = "cint"
 version = "1.0.0"
 description = "cint - make ctypes great again"
@@ -1349,55 +1338,6 @@ files = [
 [package.extras]
 docs = ["ipython", "matplotlib", "numpydoc", "sphinx"]
 tests = ["pytest", "pytest-cov", "pytest-xdist"]
-
-[[package]]
-name = "cython"
-version = "3.2.4"
-description = "The Cython compiler for writing C extensions in the Python language."
-optional = false
-python-versions = ">=3.8"
-groups = ["main"]
-files = [
-    {file = "cython-3.2.4-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:02cb0cc0f23b9874ad262d7d2b9560aed9c7e2df07b49b920bda6f2cc9cb505e"},
-    {file = "cython-3.2.4-cp310-cp310-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:f136f379a4a54246facd0eb6f1ee15c3837cb314ce87b677582ec014db4c6845"},
-    {file = "cython-3.2.4-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:35ab0632186057406ec729374c737c37051d2eacad9d515d94e5a3b3e58a9b02"},
-    {file = "cython-3.2.4-cp310-cp310-win_amd64.whl", hash = "sha256:ca2399dc75796b785f74fb85c938254fa10c80272004d573c455f9123eceed86"},
-    {file = "cython-3.2.4-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:ff9af2134c05e3734064808db95b4dd7341a39af06e8945d05ea358e1741aaed"},
-    {file = "cython-3.2.4-cp311-cp311-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:67922c9de058a0bfb72d2e75222c52d09395614108c68a76d9800f150296ddb3"},
-    {file = "cython-3.2.4-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:b362819d155fff1482575e804e43e3a8825332d32baa15245f4642022664a3f4"},
-    {file = "cython-3.2.4-cp311-cp311-win_amd64.whl", hash = "sha256:1a64a112a34ec719b47c01395647e54fb4cf088a511613f9a3a5196694e8e382"},
-    {file = "cython-3.2.4-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:64d7f71be3dd6d6d4a4c575bb3a4674ea06d1e1e5e4cd1b9882a2bc40ed3c4c9"},
-    {file = "cython-3.2.4-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:869487ea41d004f8b92171f42271fbfadb1ec03bede3158705d16cd570d6b891"},
-    {file = "cython-3.2.4-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:55b6c44cd30821f0b25220ceba6fe636ede48981d2a41b9bbfe3c7902ce44ea7"},
-    {file = "cython-3.2.4-cp312-cp312-win_amd64.whl", hash = "sha256:767b143704bdd08a563153448955935844e53b852e54afdc552b43902ed1e235"},
-    {file = "cython-3.2.4-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:28e8075087a59756f2d059273184b8b639fe0f16cf17470bd91c39921bc154e0"},
-    {file = "cython-3.2.4-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:03893c88299a2c868bb741ba6513357acd104e7c42265809fd58dce1456a36fc"},
-    {file = "cython-3.2.4-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:f81eda419b5ada7b197bbc3c5f4494090e3884521ffd75a3876c93fbf66c9ca8"},
-    {file = "cython-3.2.4-cp313-cp313-win_amd64.whl", hash = "sha256:83266c356c13c68ffe658b4905279c993d8a5337bb0160fa90c8a3e297ea9a2e"},
-    {file = "cython-3.2.4-cp314-cp314-macosx_11_0_arm64.whl", hash = "sha256:d4b4fd5332ab093131fa6172e8362f16adef3eac3179fd24bbdc392531cb82fa"},
-    {file = "cython-3.2.4-cp314-cp314-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:e3b5ac54e95f034bc7fb07313996d27cbf71abc17b229b186c1540942d2dc28e"},
-    {file = "cython-3.2.4-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:90f43be4eaa6afd58ce20d970bb1657a3627c44e1760630b82aa256ba74b4acb"},
-    {file = "cython-3.2.4-cp314-cp314-win_amd64.whl", hash = "sha256:983f9d2bb8a896e16fa68f2b37866ded35fa980195eefe62f764ddc5f9f5ef8e"},
-    {file = "cython-3.2.4-cp38-cp38-macosx_11_0_arm64.whl", hash = "sha256:55eb425c0baf1c8a46aa4424bc35b709db22f3c8a1de33adb3ecb8a3d54ea42a"},
-    {file = "cython-3.2.4-cp38-cp38-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:f583cad7a7eed109f0babb5035e92d0c1260598f53add626a8568b57246b62c3"},
-    {file = "cython-3.2.4-cp38-cp38-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:72e6c0bbd978e2678b45351395f6825b9b8466095402eae293f4f7a73e9a3e85"},
-    {file = "cython-3.2.4-cp38-cp38-win_amd64.whl", hash = "sha256:14dae483ca2838b287085ff98bc206abd7a597b7bb16939a092f8e84d9062842"},
-    {file = "cython-3.2.4-cp39-abi3-macosx_10_9_x86_64.whl", hash = "sha256:36bf3f5eb56d5281aafabecbaa6ed288bc11db87547bba4e1e52943ae6961ccf"},
-    {file = "cython-3.2.4-cp39-abi3-manylinux1_i686.manylinux_2_28_i686.manylinux_2_5_i686.whl", hash = "sha256:6d5267f22b6451eb1e2e1b88f6f78a2c9c8733a6ddefd4520d3968d26b824581"},
-    {file = "cython-3.2.4-cp39-abi3-manylinux2014_armv7l.manylinux_2_17_armv7l.manylinux_2_31_armv7l.whl", hash = "sha256:3b6e58f73a69230218d5381817850ce6d0da5bb7e87eb7d528c7027cbba40b06"},
-    {file = "cython-3.2.4-cp39-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:e71efb20048358a6b8ec604a0532961c50c067b5e63e345e2e359fff72feaee8"},
-    {file = "cython-3.2.4-cp39-abi3-musllinux_1_2_armv7l.whl", hash = "sha256:28b1e363b024c4b8dcf52ff68125e635cb9cb4b0ba997d628f25e32543a71103"},
-    {file = "cython-3.2.4-cp39-abi3-musllinux_1_2_i686.whl", hash = "sha256:31a90b4a2c47bb6d56baeb926948348ec968e932c1ae2c53239164e3e8880ccf"},
-    {file = "cython-3.2.4-cp39-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:e65e4773021f8dc8532010b4fbebe782c77f9a0817e93886e518c93bd6a44e9d"},
-    {file = "cython-3.2.4-cp39-abi3-win32.whl", hash = "sha256:2b1f12c0e4798293d2754e73cd6f35fa5bbdf072bdc14bc6fc442c059ef2d290"},
-    {file = "cython-3.2.4-cp39-abi3-win_arm64.whl", hash = "sha256:3b8e62049afef9da931d55de82d8f46c9a147313b69d5ff6af6e9121d545ce7a"},
-    {file = "cython-3.2.4-cp39-cp39-macosx_11_0_arm64.whl", hash = "sha256:f8d685a70bce39acc1d62ec3916d9b724b5ef665b0ce25ae55e1c85ee09747fc"},
-    {file = "cython-3.2.4-cp39-cp39-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:ca578c9cb872c7ecffbe14815dc4590a003bc13339e90b2633540c7e1a252839"},
-    {file = "cython-3.2.4-cp39-cp39-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:b84d4e3c875915545f77c88dba65ad3741afd2431e5cdee6c9a20cefe6905647"},
-    {file = "cython-3.2.4-cp39-cp39-win_amd64.whl", hash = "sha256:fdfdd753ad7e18e5092b413e9f542e8d28b8a08203126090e1c15f7783b7fe57"},
-    {file = "cython-3.2.4-py3-none-any.whl", hash = "sha256:732fc93bc33ae4b14f6afaca663b916c2fdd5dcbfad7114e17fb2434eeaea45c"},
-    {file = "cython-3.2.4.tar.gz", hash = "sha256:84226ecd313b233da27dc2eb3601b4f222b8209c3a7216d8733b031da1dc64e6"},
-]
 
 [[package]]
 name = "dacite"
@@ -2533,18 +2473,6 @@ files = [
 ]
 
 [[package]]
-name = "json-tricks"
-version = "3.17.3"
-description = "Extra features for Python's JSON: comments, order, numpy, pandas, datetimes, and many more! Simple but customizable."
-optional = false
-python-versions = "*"
-groups = ["main"]
-files = [
-    {file = "json_tricks-3.17.3-py2.py3-none-any.whl", hash = "sha256:8ba11cb66a09532945c05c7374a72b857dfc3870b2d145125edd508f4027dff9"},
-    {file = "json_tricks-3.17.3.tar.gz", hash = "sha256:71561eedad7c22dde019e9a38ff8c46ebd91da789e31e2513f627dd2cbbdbf56"},
-]
-
-[[package]]
 name = "json5"
 version = "0.15.0"
 description = "A Python implementation of the JSON5 data format."
@@ -3496,38 +3424,6 @@ all = ["addict", "clearml", "coverage", "dadaptation", "lion-pytorch", "lmdb", "
 tests = ["clearml", "coverage", "dadaptation", "lion-pytorch", "lmdb", "mlflow", "parameterized", "pytest"]
 
 [[package]]
-name = "mmpose"
-version = "1.3.2"
-description = "OpenMMLab Pose Estimation Toolbox and Benchmark."
-optional = false
-python-versions = ">=3.7"
-groups = ["main"]
-files = []
-develop = true
-
-[package.dependencies]
-chumpy = "*"
-json_tricks = "*"
-matplotlib = "*"
-munkres = "*"
-numpy = "*"
-opencv-python = "*"
-pillow = "*"
-scipy = "*"
-torchvision = "*"
-xtcocotools = ">=1.12"
-
-[package.extras]
-all = ["chumpy", "coverage", "flake8", "interrogate", "isort (==4.3.21)", "json_tricks", "matplotlib", "munkres", "numpy", "numpy", "opencv-python", "parameterized", "pillow", "pytest", "pytest-runner", "requests", "scipy", "torch (>=1.8)", "torchvision", "xdoctest (>=0.10.0)", "xtcocotools (>=1.12)", "yapf"]
-mim = ["mmcv (>=2.0.0,<3.0.0)", "mmdet (>=3.0.0,<3.3.0)", "mmengine (>=0.4.0,<1.0.0)"]
-optional = ["requests"]
-tests = ["coverage", "flake8", "interrogate", "isort (==4.3.21)", "parameterized", "pytest", "pytest-runner", "xdoctest (>=0.10.0)", "yapf"]
-
-[package.source]
-type = "directory"
-url = "models/mmpose"
-
-[[package]]
 name = "mmpretrain"
 version = "1.2.0"
 description = "OpenMMLab Model Pretraining Toolbox and Benchmark"
@@ -3821,18 +3717,6 @@ files = [
 check = ["check-manifest", "flake8", "flake8-black", "isort (>=5.0.3)", "pygments", "readme-renderer", "twine"]
 test = ["coverage[toml] (>=5.2)", "coveralls (>=2.1.1)", "hypothesis", "pyannotate", "pytest", "pytest-cov"]
 type = ["mypy", "mypy-extensions"]
-
-[[package]]
-name = "munkres"
-version = "1.1.4"
-description = "Munkres (Hungarian) algorithm for the Assignment Problem"
-optional = false
-python-versions = "*"
-groups = ["main"]
-files = [
-    {file = "munkres-1.1.4-py2.py3-none-any.whl", hash = "sha256:6b01867d4a8480d865aea2326e4b8f7c46431e9e55b4a2e32d989307d7bced2a"},
-    {file = "munkres-1.1.4.tar.gz", hash = "sha256:fc44bf3c3979dada4b6b633ddeeb8ffbe8388ee9409e4d4e8310c2da1792db03"},
-]
 
 [[package]]
 name = "mypy"
@@ -7766,38 +7650,6 @@ files = [
 test = ["pytest", "pytest-cov"]
 
 [[package]]
-name = "xtcocotools"
-version = "1.14.3"
-description = "Extended COCO API"
-optional = false
-python-versions = "*"
-groups = ["main"]
-files = [
-    {file = "xtcocotools-1.14.3-cp310-cp310-macosx_11_0_x86_64.whl", hash = "sha256:1cb78fc3f346a66799a8a9361aaca96a6de13591c2aa1574528c901d9acc2305"},
-    {file = "xtcocotools-1.14.3-cp310-cp310-manylinux1_x86_64.whl", hash = "sha256:34e3f4aa593a97b0f34cf97b0a21d01d939f7b36d7b79b828da2985aee9f52e5"},
-    {file = "xtcocotools-1.14.3-cp310-cp310-win_amd64.whl", hash = "sha256:a537c6fb1de97ea52097426e5429be75867795734272a1f05401fe0f1275374d"},
-    {file = "xtcocotools-1.14.3-cp311-cp311-macosx_10_9_universal2.whl", hash = "sha256:78b19e89c8b81887bae83d03f9221a8654afeb7c74910d85170781d8c23bc4d2"},
-    {file = "xtcocotools-1.14.3-cp311-cp311-manylinux1_x86_64.whl", hash = "sha256:126ca596229b2016552bf27cad01f3a2f70a3ff7576a58305a00499cb9e0057d"},
-    {file = "xtcocotools-1.14.3-cp311-cp311-win_amd64.whl", hash = "sha256:47cb5433903f30589343d54530e49abd6b61d0fd119857ba4948b8ce291dbee6"},
-    {file = "xtcocotools-1.14.3-cp37-cp37m-macosx_11_0_x86_64.whl", hash = "sha256:4fd1f3938542afcbefdce6fd8f7ee67088d5ba13fdde3b1bdb72cc8a426e47d9"},
-    {file = "xtcocotools-1.14.3-cp37-cp37m-manylinux1_x86_64.whl", hash = "sha256:02d02c4a1d3dc5b92d23a87489356636589e802a9113545fc739678f45ebf288"},
-    {file = "xtcocotools-1.14.3-cp37-cp37m-win_amd64.whl", hash = "sha256:bbf9a1fb0be372296767f36424e3687b9e81a006fef42ebf9cd91b9512fdabb9"},
-    {file = "xtcocotools-1.14.3-cp38-cp38-macosx_11_0_x86_64.whl", hash = "sha256:a91af6823ad3608a6290f871c8d586c10214d7be14e95f4896f398a72a4d447a"},
-    {file = "xtcocotools-1.14.3-cp38-cp38-manylinux1_x86_64.whl", hash = "sha256:f97dc9db08fafc1201d090581fef6f1fb82ef00589040666a914f232e55cb760"},
-    {file = "xtcocotools-1.14.3-cp38-cp38-win_amd64.whl", hash = "sha256:5ba497c09c0a8dad51d8a0c7d33614569b7553d508fdd5523ac5e34e0db5fe16"},
-    {file = "xtcocotools-1.14.3-cp39-cp39-macosx_11_0_x86_64.whl", hash = "sha256:bbcaa8347ab131121fde1cfc06c1a653d864556a83c0bbc20de4277304056f92"},
-    {file = "xtcocotools-1.14.3-cp39-cp39-manylinux1_x86_64.whl", hash = "sha256:54bc5250fd8a7241d259a29e087458e1edcdc41e83f65631ec6584e06b1d37ca"},
-    {file = "xtcocotools-1.14.3-cp39-cp39-win_amd64.whl", hash = "sha256:55e2ad139c07eb6a936339a69ad22ccbd0c0ede461def3528cc26087d31f290d"},
-    {file = "xtcocotools-1.14.3.tar.gz", hash = "sha256:6434382784d206204d2a1b491dba359ff3464a2b9eb5890fbc0d868cad4e810f"},
-]
-
-[package.dependencies]
-cython = ">=0.27.3"
-matplotlib = ">=2.1.0"
-numpy = {version = ">=1.20.0", markers = "python_version >= \"3.7\""}
-setuptools = ">=18.0"
-
-[[package]]
 name = "yapf"
 version = "0.43.0"
 description = "A formatter for Python code"
@@ -7980,4 +7832,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.12"
-content-hash = "7119719b07de06be92b9df12f746438a33a9bf6f35a2ba4102f5a4a57f856667"
+content-hash = "ec9b83ffdea7fe9e56b96412013da09e55fa215d1c08a4e63c74eb9d76880db4"
