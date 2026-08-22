@@ -4,6 +4,13 @@ import sys
 import torch
 import warnings
 
+# Ensure UTF-8 output encoding on Windows consoles
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
 # Ignore initialization warnings
 warnings.filterwarnings("ignore")
 
@@ -11,8 +18,8 @@ def main():
     print("=== ENVIRONMENT HEALTH CHECK ===")
     
     # 1. HARDWARE VERIFICATION
-    print(f"✅ PyTorch Version: {torch.__version__}")
-    print(f"✅ CUDA Available: {torch.cuda.is_available()}")
+    print(f"[OK] PyTorch Version: {torch.__version__}")
+    print(f"[OK] CUDA Available: {torch.cuda.is_available()}")
     
     # 2. DEFINE ABSOLUTE PATHS
     PROJECT_ROOT = os.path.abspath(os.getcwd())
@@ -28,17 +35,17 @@ def main():
 
     # 3. VERIFY PHYSICAL ASSETS EXISTENCE
     if not os.path.exists(MMPOSE_ROOT):
-        print(f"❌ ERROR: Cannot find models/mmpose directory at:\n   {MMPOSE_ROOT}")
+        print(f"[ERROR] Cannot find models/mmpose directory at:\n   {MMPOSE_ROOT}")
         return
     if not os.path.exists(config_file):
-        print(f"❌ ERROR: Cannot find config file at:\n   {config_file}")
+        print(f"[ERROR] Cannot find config file at:\n   {config_file}")
         return
     if not os.path.exists(checkpoint_file):
-        print(f"❌ ERROR: Cannot find weights file at:\n   {checkpoint_file}")
+        print(f"[ERROR] Cannot find weights file at:\n   {checkpoint_file}")
         return
 
     # 4. LOAD MODEL WITH WORKING DIRECTORY CONTEXT SWITCH
-    print("🔄 Attempting to load HRNet-W32...")
+    print("[INFO] Attempting to load HRNet-W32...")
     
     try:
         from mmpose.apis import init_model
@@ -47,21 +54,21 @@ def main():
         register_all_modules()
         
         # Switch working directory to models/mmpose so internal relative imports resolve
-        print(f"   📂 Switching context to: {MMPOSE_ROOT}")
+        print(f"   [INFO] Switching context to: {MMPOSE_ROOT}")
         os.chdir(MMPOSE_ROOT)
         
         model = init_model(config_file, checkpoint_file, device='cpu')
         
         # Restore project root working directory
         os.chdir(PROJECT_ROOT)
-        print(f"   📂 Context restored to: {PROJECT_ROOT}")
+        print(f"   [INFO] Context restored to: {PROJECT_ROOT}")
         
-        print("✅ SUCCESS! Model initialized into memory.")
+        print("[SUCCESS] Model initialized into memory.")
         print(f"   (Model: HRNet initialized with {sum(p.numel() for p in model.parameters()):,} parameters)")
         
     except Exception as e:
         os.chdir(PROJECT_ROOT)
-        print(f"❌ CRITICAL ERROR: {e}")
+        print(f"[CRITICAL ERROR] {e}")
         import traceback
         traceback.print_exc()
 
