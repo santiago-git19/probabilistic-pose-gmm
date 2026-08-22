@@ -1,7 +1,7 @@
-# Robust Pose TTA: Probabilistic Test-Time Adaptation with Kinematic MRF Priors for Human Pose Estimation
+# Human Pose Estimation by Probabilistic Mixtures of Gaussian and Uniform Distributions: Continuous Modeling, Test-Time Adaptation, and Uncertainty Calibration
 
 [![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![PyTorch 2.1+](https://img.shields.io/badge/PyTorch-2.1.2-red.svg)](https://pytorch.org/)
 [![MMPose 1.3.2](https://img.shields.io/badge/MMPose-1.3.2-green.svg)](https://github.com/open-mmlab/mmpose)
 [![Hydra 1.3](https://img.shields.io/badge/Config-Hydra%201.3-89b4fa.svg)](https://hydra.cc/)
@@ -13,19 +13,26 @@
 ## 📖 Table of Contents
 
 - [Executive Summary](#-executive-summary)
-- [Methodology & Theoretical Framework](#-methodology--theoretical-framework)
-  - [1. Multi-Scale Stochastic Ingestion (GPU)](#1-multi-scale-stochastic-ingestion-gpu)
-  - [2. Sharpness-Weighted Continuous Aggregation (CPU)](#2-sharpness-weighted-continuous-aggregation-cpu)
-  - [3. Dual-Hypothesis Robust EM Mixture Modeling (CPU)](#3-dual-hypothesis-robust-em-mixture-modeling-cpu)
+- [Core Theoretical Contributions](#-core-theoretical-contributions)
+- [Methodology & 4-Stage Architecture Pipeline](#-methodology--4-stage-architecture-pipeline)
+  - [1. Stochastic Test-Time Augmentation (GPU)](#1-stochastic-test-time-augmentation-gpu)
+  - [2. Continuous Spatial Aggregation & Monte Carlo Sampling (CPU)](#2-continuous-spatial-aggregation--monte-carlo-sampling-cpu)
+  - [3. Robust Gaussian Mixture Modeling & BIC Selection (CPU)](#3-robust-gaussian-mixture-modeling--bic-selection-cpu)
   - [4. Kinematic Tree MRF Decoding & Anatomical Priors (CPU)](#4-kinematic-tree-mrf-decoding--anatomical-priors-cpu)
-- [Repository Architecture](#-repository-architecture)
+  - [5. Heteroscedastic Uncertainty Quantification & Adaptive Softmax Fusion](#5-heteroscedastic-uncertainty-quantification--adaptive-softmax-fusion)
+- [Comprehensive Empirical Benchmarks & Ablation Studies](#-comprehensive-empirical-benchmarks--ablation-studies)
+  - [Ablation 1: Baseline Precision Parity (DARK vs. GMM Expectation)](#ablation-1-baseline-precision-parity-dark-vs-gmm-expectation)
+  - [Ablation 2: Continuous Stochastic TTA vs. Discrete TTA](#ablation-2-continuous-stochastic-tta-vs-discrete-tta)
+  - [Ablation 3: Decoupled Kinematic MRF Prior Breakdown (85,255 Keypoints)](#ablation-3-decoupled-kinematic-mrf-prior-breakdown-85255-keypoints)
+  - [Ablation 4: In-Distribution Calibration & Out-of-Distribution Anomaly Detection](#ablation-4-in-distribution-calibration--out-of-distribution-anomaly-detection)
+  - [Ablation 5: Multi-Backbone Validation & Latency Profiling](#ablation-5-multi-backbone-validation--latency-profiling)
+- [Qualitative Diagnostic Suite (Publication Figures 1–5)](#-qualitative-diagnostic-suite-publication-figures-15)
+- [Repository Structure & Clean Architecture](#-repository-structure--clean-architecture)
 - [Installation & Environment Setup](#-installation--environment-setup)
-- [Dataset Preparation](#-dataset-preparation)
+- [One-Click Scientific Reproduction Suite](#-one-click-scientific-reproduction-suite)
 - [Quickstart: Python API](#-quickstart-python-api)
-- [Reproducing Benchmark Experiments](#-reproducing-benchmark-experiments)
-- [Diagnostic Cohort System & Visual Analytics](#-diagnostic-cohort-system--visual-analytics)
 - [Jupyter Notebooks Experimental Suite](#-jupyter-notebooks-experimental-suite)
-- [Empirical Results & Ablation Studies](#-empirical-results--ablation-studies)
+- [Limitations & Multi-View 3D Extensibility](#-limitations--multi-view-3d-extensibility)
 - [Citation](#-citation)
 - [License & Acknowledgments](#-license--acknowledgments)
 
@@ -33,109 +40,230 @@
 
 ## 🔬 Executive Summary
 
-Modern deep learning architectures for 2D human pose estimation (e.g., HRNet, ViTPose, ResNet) typically rely on deterministic $\mathrm{argmax}$ decoding over output heatmaps. Under severe real-world corruptions—such as **motion blur**, **low resolution**, **heavy multi-person occlusion**, and **symmetric limb ambiguities**—deterministic peak selection causes catastrophic limb swaps, spatial jitter, and complete failure to communicate spatial confidence.
+Despite advancements in sub-pixel decoding, modern Human Pose Estimation (HPE) architectures (e.g., HRNet, ViTPose, ResNet) remain fundamentally constrained by **deterministic point-regression** ($\mathrm{argmax}$ or Taylor expansions). Under severe real-world conditions—such as **motion blur**, **progressive downsampling/resolution loss**, **dense multi-person crowding**, and **symmetric limb ambiguities**—deterministic coordinate extraction systematically fails: it cross-collapses limbs, introduces spatial jitter, and fails to communicate heteroscedastic uncertainty.
 
-**Robust Pose TTA** introduces a principled, mathematically rigorous framework combining **Multi-Scale Test-Time Augmentation (TTA)**, **Continuous Probabilistic Mixture Modeling**, and **Global Kinematic MRF Graph Decoding** to deliver:
-1. **Sub-pixel localization refinement** beyond the discrete spatial grid.
-2. **Calibrated spatial uncertainty quantification** ($\Sigma_k$, Total Variance, Shannon Entropy, NLL).
-3. **Automatic left-right limb ambiguity resolution** via dual-hypothesis Bayesian Information Criterion ($\mathrm{BIC}$).
-4. **Physiologically constrained topology restoration** through tree-structured kinematic Markov Random Fields.
+**Robust Pose TTA** introduces a post-hoc, continuous probabilistic framework that intercepts raw heatmaps and parameterizes them explicitly as a **Gaussian Mixture Model (GMM) augmented with an orthogonal Uniform distribution ($\pi_u$)**, requiring **zero architectural modifications and zero retraining**.
 
 ```
-+---------------------------------------------------------------------------------------------------------------+
-|                                      ROBUST POSE TTA WORKFLOW PIPELINE                                       |
-+---------------------------------------------------------------------------------------------------------------+
-|  1. GPU Ingestion     |  2. Continuous Aggregation |  3. Probabilistic Mixture   |  4. Kinematic MRF Graph     |
-|  - Multi-Scale Views  |  - Sharpness Weighting     |  - Dual EM (K=1 vs K=2)     |  - Tree Global Optimization |
-|  - Frozen Backbone    |  - Dequantized MC Sampling |  - Uniform Outlier Absorber |  - Anatomical Spring Priors |
-|  - Raw Heatmaps       |  - P_k(x) Density Surface  |  - Calibrated Covariances   |  - Limb Swap Pruning        |
-+---------------------------------------------------------------------------------------------------------------+
+========================================================================================================================
+                                     ROBUST POSE TTA: 4-STAGE PIPELINE OVERVIEW
+========================================================================================================================
+ [1. GPU Forward]        [2. Continuous Aggregation]      [3. Probabilistic Mixture]       [4. Kinematic MRF Graph]
+ +------------------+     +--------------------------+     +--------------------------+     +--------------------------+
+ | Input Image (I)  | --> | Sharpness-Weighted TTA   | --> | EM Fitting (K=1 vs K=2)  | --> | Kinematic Tree MRF Graph |
+ | Multi-Scale Crops|     | Invert Affine Transforms |     | Complexity Gating (BIC)  |     | Max-Product Belief Prop. |
+ | Frozen Backbone  |     | Dequantized MC Sampling  |     | Uniform Noise Sink (π_u) |     | Spring Distance Priors   |
+ | Raw Heatmaps H_k |     | P_k(x) Continuous Field  |     | Calibrated Cov. Vol. det |     | Adaptive Softmax Fusion  |
+ +------------------+     +--------------------------+     +--------------------------+     +--------------------------+
+========================================================================================================================
 ```
 
 ---
 
-## 📐 Methodology & Theoretical Framework
+## 🌟 Core Theoretical Contributions
 
-![Methodology Pipeline Overview](Paper/Paper/figures/methodology/methodology_pipeline_overview.png)
+1. **Continuous Point Estimation at Parity with DARK**:
+   The solitary mathematical expectation of the primary Gaussian component ($\boldsymbol{\mu}$) matches the sub-pixel precision of the state-of-the-art Taylor-expanded DARK decoder (within $\pm 0.0008$ OKS) across clean and corrupted benchmarks without requiring local Hessian approximations.
+2. **Scale-Aware TTA Mitigating Heatmap Poisoning**:
+   Replaces naive arithmetic heatmap averaging with continuous sigmoidal sharpness weighting $\mathcal{C}_k^{(n)}$, eliminating out-of-frame boundary degradation and consolidating multi-scale distributions in continuous space.
+3. **Topological Ambiguity Isolation via Robust GMMs**:
+   Models spatial keypoint densities as $K=1$ (unimodal) vs. $K=2$ (bimodal) mixtures selected via the Bayesian Information Criterion (BIC), providing explicit parametric hypothesis tracking for symmetric limbs.
+4. **Orthogonal Uniform Noise Sink ($\pi_u$)**:
+   A uniform background distribution $\mathcal{U}(\mathbf{x} \mid \mathcal{A})$ acts as an atypical probability sink that absorbs non-Gaussian diffuse noise under severe corruption, preventing covariance explosion and preserving the geometric integrity of genuine modes.
+5. **The 2D Kinematic MRF Dilemma**:
+   Demonstrates that while Markov Random Fields act as effective sub-pixel regularizers in canonical poses, rigid 2D Euclidean priors misinterpret *perspective foreshortening* as an anatomical violation, forcefully dragging foreshortened limbs across the image plane and causing strict swaps.
+6. **Breakthrough Uncertainty Quantification**:
+   The calibrated geometric Covariance Volume $\det(\mathbf{\Sigma}_{\text{final}})$ fundamentally outperforms heuristic confidence ($1 - P_{\text{DARK}}$) for Out-of-Distribution (OoD) anomaly detection under heavy occlusion (AUROC $0.94$ vs $0.38$ on CrowdPose $K=1$).
+7. **Universal In-Distribution Calibration via Adaptive Softmax**:
+   Continuously fuses heuristic baseline confidence with geometric covariance volume, systematically matching or enhancing Area Under the Sparsification Error (AUSE) across all datasets and degradations.
+8. **$\mathcal{O}(N^3)$ Memory Curse Bypass for Multi-View 3D**:
+   Provides a direct mathematical formulation for continuous ray triangulation in 3D Euclidean space, rendering kinematic priors viewpoint-invariant while avoiding dense 3D voxel grids.
 
-### 1. Multi-Scale Stochastic Ingestion (GPU)
-Given an input frame $\mathbf{I}$, stochastic test-time transformations generate multi-scale representations across scales $s \in \{0.85, 1.00, 1.15\}$ and horizontal reflections:
+---
+
+## 📐 Methodology & 4-Stage Architecture Pipeline
+
+![Methodology Pipeline Overview](assets/methodology_pipeline_overview.png)
+
+### 1. Stochastic Test-Time Augmentation (GPU)
+Given an input frame $\mathbf{I}$, stochastic test-time transformations generate multi-scale representations across scales $s \in \{0.85, 0.925, 1.00, 1.075, 1.15\}$ and horizontal reflections:
 $$\tilde{\mathbf{I}}^{(n)} = \mathcal{T}^{(n)}(\mathbf{I}), \quad \tilde{\mathbf{H}}_k^{(n)} = \Phi(\tilde{\mathbf{I}}^{(n)})$$
-where $\Phi$ denotes a frozen neural backbone (e.g., HRNet-W32, ViTPose-Small, ResNet-50) and $\tilde{\mathbf{H}}_k^{(n)}$ represents the predicted raw spatial response for keypoint $k$.
+where $\Phi$ denotes a frozen backbone (HRNet-W32, ViTPose-Small, ResNet-50) and $\tilde{\mathbf{H}}_k^{(n)}$ represents the raw activation tensor for joint $k$.
 
-### 2. Sharpness-Weighted Continuous Aggregation (CPU)
-Rather than naive linear averaging, multi-scale heatmaps are aggregated using a non-linear sharpness weighting function that suppresses diffuse, degraded, or out-of-frame responses:
+### 2. Continuous Spatial Aggregation & Monte Carlo Sampling (CPU)
+Raw heatmaps are normalized into valid probability distributions $\hat{\mathbf{H}}_k^{(n)}$ and mapped back to the canonical reference frame via exact inverse affine transforms. To prevent **heatmap poisoning** from uninformative out-of-field crops, representations are combined using continuous sharpness weighting:
 $$\mathbf{P}_k(\mathbf{x}) = \sum_{n=1}^N w_k^{(n)} \tilde{\mathbf{H}}_k^{(n)}(\mathbf{x}), \quad w_k^{(n)} = \frac{\mathcal{C}_k^{(n)}}{\sum_m \mathcal{C}_k^{(m)}}$$
-where confidence $\mathcal{C}_k^{(n)}$ is parameterized by maximum activation $\rho_k^{(n)}$ and local spatial gradient concentration $\mu_k^{(n)}$:
+where structural confidence $\mathcal{C}_k^{(n)}$ is parameterized by maximum activation $\rho_k^{(n)} = \max(\hat{\mathbf{H}}_k^{(n)})$ and expected mean $\mu_k^{(n)} = \mathbb{E}[\hat{\mathbf{H}}_k^{(n)}]$:
 $$\mathcal{C}_k^{(n)} = \left(\rho_k^{(n)}\right)^\alpha \cdot \left[1 - \frac{1}{1 + \frac{\rho_k^{(n)} / (\mu_k^{(n)} + \epsilon)}{\tau}}\right]^\beta$$
 
-Continuous sub-pixel positions are extracted via continuous dequantization rejection sampling:
+Unbiased spatial coordinates are extracted using temperature-sharpened ($T=0.3$) Von Neumann Rejection Sampling ($N=1000$). Continuous support over $\mathbb{R}^2$ is recovered via uniform sub-pixel dequantization:
 $$\tilde{\mathbf{x}}_m = \mathbf{x}_m + \boldsymbol{\epsilon}, \quad \boldsymbol{\epsilon} \sim \mathcal{U}(-0.5, 0.5), \quad m = 1, \dots, M$$
+The additive variance $\frac{1}{12}\mathbf{I} \approx 0.0833\mathbf{I}$ is deliberately retained as a physically grounded lower-bound for $1\times1$ pixel quantization uncertainty.
 
-### 3. Dual-Hypothesis Robust EM Mixture Modeling (CPU)
-Spatial samples are fitted using a **Robust Gaussian Mixture Model** augmented with a uniform background component to absorb spatial outliers and noise:
-$$p(\mathbf{x} \mid \boldsymbol{\theta}) = \sum_{k=1}^{K} \pi_k \mathcal{N}(\mathbf{x} \mid \boldsymbol{\mu}_k, \boldsymbol{\Sigma}_k) + \pi_u \cdot U(\mathbf{x} \mid \mathcal{A})$$
-where $\pi_u$ is the background mixing weight and $U(\mathbf{x} \mid \mathcal{A}) = \frac{1}{|\mathcal{A}|}$ is uniform over the search bounding box $\mathcal{A}$.
-
-The optimal hypothesis ($K=1$ unimodal vs. $K=2$ bimodal) is determined via the Bayesian Information Criterion:
-$$\mathrm{BIC} = -2 \ln \mathcal{L}(\hat{\boldsymbol{\theta}}) + p \ln M$$
-When $\mathrm{BIC}_2 < \mathrm{BIC}_1$, the system detects an intrinsic multimodal ambiguity (e.g., overlapping opponent limbs) and preserves both candidate hypotheses $\{\boldsymbol{\mu}_1, \boldsymbol{\mu}_2\}$ with their spatial covariance matrices $\{\boldsymbol{\Sigma}_1, \boldsymbol{\Sigma}_2\}$.
+### 3. Robust Gaussian Mixture Modeling & BIC Selection (CPU)
+Spatial samples are fitted using a generalized Expectation-Maximization (EM) algorithm with dynamic spectral Tikhonov regularization $\tilde{\mathbf{\Sigma}}_c = \mathbf{\Sigma}_c + (\lambda_{\text{reg}} - \min(0, \lambda_{\min}))\mathbf{I}$:
+$$p(\tilde{\mathbf{x}} \mid \mathbf{\Theta}) = \sum_{c=1}^K \pi_c \mathcal{N}(\tilde{\mathbf{x}} \mid \boldsymbol{\mu}_c, \mathbf{\Sigma}_c) + \pi_u \mathcal{U}(\tilde{\mathbf{x}} \mid \mathcal{A})$$
+The optimal cardinality ($K=1$ unimodal vs. $K=2$ bimodal) is determined via the Bayesian Information Criterion:
+$$\mathrm{BIC} = p \ln(M) - 2\mathcal{L}$$
+When $\mathrm{BIC}_2 < \mathrm{BIC}_1$, the system flags a bimodal topological ambiguity and preserves both spatial hypotheses.
 
 ### 4. Kinematic Tree MRF Decoding & Anatomical Priors (CPU)
-To resolve bimodal swaps and enforce global physiological consistency, the skeleton is structured as a tree graph $\mathcal{G} = (\mathcal{V}, \mathcal{E})$. The optimal global keypoint configuration $\mathbf{x}^* = (x_1^*, \dots, x_J^*)$ is decoded via exact Max-Product Belief Propagation:
-$$\mathbf{x}^* = \arg\min_{\mathbf{x}} \sum_{u=1}^{J} \phi_u(x_u) + \sum_{(u, v) \in \mathcal{E}} \psi_{uv}(x_u, x_v)$$
-where:
-- **Unary Energy**: $\phi_u(x_u) = -\ln \mathbf{P}_u(x_u)$
-- **Kinematic Pairwise Spring Energy**: 
-$$\psi_{uv}(x_u, x_v) = \frac{(\|\mathbf{x}_u - \mathbf{x}_v\| - \mu_{uv})^2}{2\sigma_{uv}^2}$$
-with anatomical parameters $\mu_{uv}$ (mean segment length) and $\sigma_{uv}^2$ (segment length variance) calibrated on non-occluded training statistics.
+The human skeleton is modeled as a tree graph $\mathcal{G} = (\mathcal{V}, \mathcal{E})$ rooted at the facial axis. Unimodal keypoints ($K=1$) act as invariant structural anchors ($\Delta\mathrm{OKS}=0$), while bimodal candidates ($K=2$) are decoded via exact Max-Product Belief Propagation:
+$$\mathbf{x}^* = \arg\min_{\mathbf{x}} \sum_{u \in \mathcal{V}} \phi_u(x_u) + \sum_{(u, v) \in \mathcal{E}} \psi_{uv}(x_u, x_v)$$
+- **Unary Cost**: $\phi_u(x_u) = -\ln \mathbf{P}_u(x_u)$
+- **Kinematic Pairwise Prior**:
+  $$\psi_{uv}(x_u, x_v) = \frac{(\|\mathbf{x}_u - \mathbf{x}_v\| - \mu_{uv}^{\text{bone}}\sqrt{A_{\text{box}}})^2}{2(\sigma_{uv}^{\text{bone}} \cdot \sigma_{\text{mult}}\sqrt{A_{\text{box}}})^2}$$
+where $\mu_{uv}^{\text{bone}}$ and $\sigma_{uv}^{\text{bone}}$ are empirically calibrated on COCO training statistics, with $\sigma_{\text{mult}}=2.0$ to account for natural 2D projection tolerance.
+
+### 5. Heteroscedastic Uncertainty Quantification & Adaptive Softmax Fusion
+Applying the Law of Total Variance across Gaussian mixing weights $\tilde{\pi}_k = \pi_k / \sum_{j=1}^K \pi_j$:
+$$\mathbf{\Sigma}_{\text{total}} = \sum_{k=1}^K \tilde{\pi}_k \left( \mathbf{\Sigma}_k + (\boldsymbol{\mu}_k - \boldsymbol{\mu}_{\text{global}})(\boldsymbol{\mu}_k - \boldsymbol{\mu}_{\text{global}})^T \right), \quad \mathbf{\Sigma}_{\text{final}} = \frac{1}{(s \cdot \kappa_j)^2} \mathbf{\Sigma}_{\text{total}} + \epsilon\mathbf{I}$$
+where $s^2$ is the bounding box area and $\kappa_j$ is the COCO per-joint standard deviation constant.
+
+The scalar spatial metric is bounded via exponential projection:
+$$U_{\text{gmm}} = 1 - \exp(-\beta \cdot \det(\mathbf{\Sigma}_{\text{final}}))$$
+and fused with baseline heuristic uncertainty $U_{\text{base}} = 1 - P_{\text{DARK}}$ via **Adaptive Softmax Fusion**:
+$$U_{\text{adapt}} = \frac{\exp(U_{\text{base}}) \cdot U_{\text{base}} + \exp(U_{\text{gmm}}) \cdot U_{\text{gmm}}}{\exp(U_{\text{base}}) + \exp(U_{\text{gmm}})}$$
 
 ---
 
-## 📂 Repository Architecture
+## 📊 Comprehensive Empirical Benchmarks & Ablation Studies
+
+### Ablation 1: Baseline Precision Parity (DARK vs. GMM Expectation)
+
+Evaluated on clean images ($256 \times 192$) across 500 instances per benchmark:
+
+| Dataset | Metric | DARK (Taylor Argmax) | Ours (Solitary GMM Expectation) | $\Delta$ Difference |
+| :--- | :--- | :---: | :---: | :---: |
+| **COCO val2017** | OKS | **0.7079** | 0.7077 | $-0.0002$ |
+| **CrowdPose** | OKS | **0.8278** | 0.8270 | $-0.0008$ |
+| **OCHuman** | OKS | **0.6281** | 0.6280 | $-0.0001$ |
+
+> **Conclusion**: The continuous GMM mathematical expectation achieves strict geometric parity with state-of-the-art Taylor expansion decoders while unlocking continuous spatial covariance parameters.
+
+---
+
+### Ablation 2: Continuous Stochastic TTA vs. Discrete TTA
+
+Comprehensive performance across all five resolution degradation tiers (Clean, Low, Medium, High, Extreme):
+
+| Dataset | Degradation Tier | OKS (DARK) | OKS (Ours GMM) | Loose Swaps (DARK) | Loose Swaps (Ours GMM) | Strict Swaps (DARK) | Strict Swaps (Ours GMM) |
+| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| **COCO** | Baseline (Clean) | **0.7137** | 0.7129 | 98 | **97** ($\mathbf{-1}$) | 18 | 18 ($0$) |
+| | Resize Low ($0.50\times$) | **0.6912** | 0.6907 | 116 | **113** ($\mathbf{-3}$) | 26 | 26 ($0$) |
+| | Resize Medium ($0.25\times$) | **0.6082** | 0.6076 | 215 | **214** ($\mathbf{-1}$) | **66** | 67 ($+1$) |
+| | Resize High ($0.125\times$) | **0.4485** | 0.4465 | 404 | **388** ($\mathbf{-16}$) | **135** | 138 ($+3$) |
+| | Resize Extreme ($0.062\times$) | **0.2505** | 0.2494 | 438 | **437** ($\mathbf{-1}$) | 139 | 139 ($0$) |
+| **CrowdPose** | Baseline (Clean) | **0.8361** | 0.8355 | **150** | 151 ($+1$) | 38 | **36** ($\mathbf{-2}$) |
+| | Resize Low ($0.50\times$) | **0.8312** | 0.8302 | 155 | **153** ($\mathbf{-2}$) | **36** | 38 ($+2$) |
+| | Resize Medium ($0.25\times$) | **0.7956** | 0.7954 | 198 | **191** ($\mathbf{-7}$) | **53** | 54 ($+1$) |
+| | Resize High ($0.125\times$) | **0.6761** | 0.6755 | 336 | **329** ($\mathbf{-7}$) | **102** | 103 ($+1$) |
+| | Resize Extreme ($0.062\times$) | **0.4389** | 0.4383 | **497** | 498 ($+1$) | **169** | 171 ($+2$) |
+| **OCHuman** | Baseline (Clean) | 0.6356 | 0.6356 | 441 | **437** ($\mathbf{-4}$) | 135 | **132** ($\mathbf{-3}$) |
+| | Resize Low ($0.50\times$) | **0.6305** | 0.6299 | 443 | **442** ($\mathbf{-1}$) | **127** | 131 ($+4$) |
+| | Resize Medium ($0.25\times$) | 0.6100 | **0.6106** ($\mathbf{+0.0006}$) | 467 | **458** ($\mathbf{-9}$) | **126** | 128 ($+2$) |
+| | Resize High ($0.125\times$) | **0.5342** | 0.5337 | 544 | **540** ($\mathbf{-4}$) | 139 | **138** ($\mathbf{-1}$) |
+| | Resize Extreme ($0.062\times$) | 0.3574 | **0.3578** ($\mathbf{+0.0005}$) | 738 | **720** ($\mathbf{-18}$) | 257 | **249** ($\mathbf{-8}$) |
+
+---
+
+### Ablation 3: Decoupled Kinematic MRF Prior Breakdown (85,255 Keypoints)
+
+Evaluating the selective activation of the kinematic tree across 85,255 keypoints:
+
+| Dataset | Degradation Tier | Unimodal Anchors Ratio ($K=1$) | $\Delta_{\text{MRF}}$ ($K=1$) | Ambiguous Nodes Ratio ($K=2$) | $\Delta_{\text{MRF}}$ Gain ($K=2$) |
+| :--- | :--- | :---: | :---: | :---: | :---: |
+| **COCO** | Clean | 95.1% | $0.0000$ | 4.9% | $\mathbf{+0.0254\ (+2.54\%)}$ |
+| | Resize High | 67.1% | $0.0000$ | 32.9% | $\mathbf{+0.0060\ (+0.60\%)}$ |
+| | Resize Extreme | 40.6% | $0.0000$ | 59.4% | $\mathbf{+0.0056\ (+0.56\%)}$ |
+| **CrowdPose** | Clean | 91.0% | $0.0000$ | 9.0% | $-0.0009\ (-0.09\%)$ |
+| | Resize Medium | 87.5% | $0.0000$ | 12.4% | $\mathbf{+0.0140\ (+1.40\%)}$ |
+| | Resize Extreme | 53.1% | $0.0000$ | 46.9% | $\mathbf{+0.0045\ (+0.45\%)}$ |
+| **OCHuman** | Clean | 72.7% | $0.0000$ | 27.3% | $-0.0032\ (-0.32\%)$ |
+| | Resize Low | 72.7% | $0.0000$ | 27.3% | $\mathbf{+0.0069\ (+0.69\%)}$ |
+| | Resize Extreme | 59.3% | $0.0000$ | 40.7% | $\mathbf{+0.0007\ (+0.07\%)}$ |
+| **Pooled Total** | **All 85,255 Keypoints** | **74.7%** | $\mathbf{0.0000}$ | **25.3%** | $\mathbf{+0.0040\ (+0.40\%)}$ |
+
+---
+
+### Ablation 4: In-Distribution Calibration & Out-of-Distribution Anomaly Detection
+
+#### Global Sparsification Error (AUSE $\downarrow$):
+
+| Dataset | Evaluation Regime | DARK ($1 - P_{\text{DARK}}$) | DARK (Entropy) | Ours ($\det(\mathbf{\Sigma}_{\text{final}})$) |
+| :--- | :--- | :---: | :---: | :---: |
+| **COCO** | Global | **0.0581** | 0.1437 | 0.0945 |
+| | Occluded Joints | **0.1026** | 0.2037 | 0.1322 |
+| **CrowdPose** | Global | **0.0515** | 0.1591 | 0.0911 |
+| | Occluded Joints | **0.0599** | 0.1845 | 0.1067 |
+| **OCHuman** | Global | **0.1573** | 0.2373 | 0.2143 |
+| | **Occluded Joints** | 0.2636 | 0.3130 | $\mathbf{0.2203}$ |
+| | **Resize Extreme ($0.062\times$)** | 0.2165 | — | $\mathbf{0.2024}$ |
+
+#### Out-of-Distribution (OoD) Anomaly Detection (AUROC $\uparrow$):
+
+| Evaluation Condition | DARK ($1 - P_{\text{DARK}}$) | Ours ($\det(\mathbf{\Sigma}_{\text{final}})$) | Performance Gain |
+| :--- | :---: | :---: | :---: |
+| **CrowdPose ($K=1$ Unimodal Occlusions)** | 0.3800 | $\mathbf{0.9400}$ | $\mathbf{+0.5600\ (+147.4\%)}$ |
+| **OCHuman ($K=1$ Heavy Occlusion)** | 0.4210 | $\mathbf{0.8920}$ | $\mathbf{+0.4710\ (+111.9\%)}$ |
+
+---
+
+### Ablation 5: Multi-Backbone Validation & Latency Profiling
+
+Evaluated across architectures on COCO val2017 ($256 \times 192$):
+
+| Backbone Architecture | Codec | Forward GPU (ms) | Continuous TTA (ms) | EM + BIC CPU (ms) | MRF Tree (ms) | Peak VRAM |
+| :--- | :--- | :---: | :---: | :---: | :---: | :---: |
+| **HRNet-W32** | DARK | 18.4 ms | 3.4 ms | 1342.1 ms | 1.60 ms | 142 MB |
+| **ResNet-50** | DARK | 12.1 ms | 3.2 ms | 1311.7 ms | 1.58 ms | 118 MB |
+| **ViTPose-Small** | UDP | 24.6 ms | 3.6 ms | 1391.6 ms | 1.62 ms | 265 MB |
+
+> **Computational Note**: Crucially, this latency bottleneck is localized strictly in the iterative mixture fitting rather than in graph kinematics or memory transfers. Because Monte Carlo sampling and GMM clustering are strictly independent across the 17 anatomical joints, the post-processing module is embarrassingly parallelizable; implementing the EM algorithm as native batch-tensor GPU operations would substantially reduce post-processing latency by evaluating all keypoints concurrently, providing an immediate pathway toward interactive frame rates. Furthermore, the memory footprint remains exceptionally modest ($118 - 265\ \text{MB}$ peak VRAM across all backbones), confirming that continuous uncertainty extraction does not impose GPU memory bottlenecks.
+
+---
+
+## 🖼️ Qualitative Diagnostic Suite (Publication Figures 1–5)
+
+The repository provides automated generation for all 5 publication-grade qualitative diagnostic figures:
+
+| Figure | Topic | Sample ID & Keypoint | Primary Empirical Finding |
+| :--- | :--- | :---: | :--- |
+| **Figure 1** | **Topological Swap Disambiguation** | Image 460 (`L_Ankle`, kp 15) | DARK snaps to the wrong mode ($w_2=0.43$), while GMM retains both spatial hypotheses ($w_1=0.56$). |
+| **Figure 2** | **The Kinematic MRF Dilemma** | Win 130 (`R_Ankle`) vs. Fail 116555 (`L_Ankle`) | Demonstrates constructive pull in canonical poses vs. destructive foreshortening drag in 2D perspective. |
+| **Figure 3** | **OoD Volumetric Uncertainty Alert** | Image 108525 (`L_Eye`, kp 1) | Baseline overconfidently predicts occluded eye ($P=0.88$), while $\det(\mathbf{\Sigma})$ triggers a massive alert. |
+| **Figure 4** | **Heatmap Poisoning Mitigation** | Image 251 (`L_Knee`, kp 13) | Standard arithmetic averaging drops OKS to 0.69; continuous sharpness weighting restores OKS to 0.82. |
+| **Figure 5** | **Uniform Noise Absorption ($\pi_u$)** | Image 482 (`L_Ankle`, kp 15) | Under extreme degradation, $\pi_u$ absorbs $14.51\%$ noise mass, preserving Gaussian covariance geometry. |
+
+---
+
+## 📂 Repository Structure & Clean Architecture
+
+Designed following **SOLID principles** and **Clean Architecture**:
 
 ```
 robust-pose-tta/
-├── configs/                          # Modular Hydra configuration ecosystem
-│   ├── config.yaml                   # Main experiment configuration
-│   ├── dataset/                      # Dataset profiles (coco.yaml, crowdpose.yaml, ochuman.yaml)
-│   ├── model/                        # Backbone profiles (hrnet_w32.yaml, vitpose_small.yaml, resnet50.yaml)
-│   ├── sampling/                     # Monte Carlo parameters (rejection, importance, temperature)
-│   ├── mixture/                      # Robust GMM & EM parameters (AIC/BIC weights, max_iter)
-│   ├── mrf/                          # Kinematic tree structure and spring stiffness priors
-│   └── tta/                          # Augmentation schedules (multi-scale, flip, photometric)
-├── notebooks/                        # 17 Publication-Grade Interactive Jupyter Notebooks
-│   ├── 03_test_coco_loader.ipynb
-│   ├── 04_test_crowdpose_loader.ipynb
-│   ├── 05_test_ochuman_loader.ipynb
-│   ├── 06_test_model_inference.ipynb
-│   ├── 07_test_model_adapters.ipynb
-│   ├── 08_demo_sampling.ipynb
-│   ├── 09_demo_em_flow.ipynb
-│   ├── 10_complete_pipeline.ipynb
-│   ├── 11_test_heatmap_decode.ipynb
-│   ├── 12_validate_coord_transformation.ipynb
-│   ├── 13_debug_fiftyone_visual.ipynb
-│   ├── 14_analysis_run_benchmark_stats.ipynb
-│   ├── 15_verify_tta_flip.ipynb
-│   ├── 16_test_scale_tta.ipynb
-│   ├── 17_validate_downscaled_benchmark.ipynb
-│   ├── 18_validate_image_quality_augmentations.ipynb
-│   └── verify_tta_pipeline.ipynb
-├── src/                              # Core library source code
+├── configs/                              # Modular Hydra experiment configuration ecosystem
+│   ├── config.yaml                       # Master configuration entrypoint
+│   ├── dataset/                          # Dataset schemas (coco.yaml, crowdpose.yaml, ochuman.yaml)
+│   ├── model/                            # Model adapters (hrnet_w32.yaml, vitpose_small.yaml, resnet50.yaml)
+│   └── tta/                              # Multi-scale schedules and sharpness parameters
+├── notebooks/                            # 17 Interactive Jupyter Notebooks with precomputed outputs
+├── outputs/                              # Benchmark results, evaluation parquets, and figures
+│   ├── data/                             # 27 validated benchmark evaluation parquets (~55 MB)
+│   └── figures/                          # Vectorial PDFs and 300 DPI publication figures
+├── scripts/                              # Scientific reproduction CLI suite
+│   ├── download_benchmark_data.py        # Automated benchmark parquet retriever & validator
+│   ├── package_benchmark_data.py         # Release packaging utility for Zenodo/GitHub Releases
+│   └── reproduce_all.py                  # Master One-Click reproduction CLI
+├── src/                                  # Production library source code
 │   └── pose_uncertainty/
-│       ├── core/                     # Core mathematical algorithms (sampling.py, mixture.py, mrf.py)
-│       ├── datasets/                 # Unified dataloaders (coco.py, crowdpose.py, ochuman.py)
-│       ├── models/                   # Framework-agnostic adapters (adapters.py, resolver.py)
-│       ├── tta/                      # TTA engines & transformation inverters (engine.py, inverse.py)
-│       └── utils/                    # Geometry, typing, metrics, and visualization utilities
-├── experiments/                      # Benchmark runners, ablations, and visualization scripts
-│   ├── run_benchmark.py              # High-throughput mass evaluation harness
-│   ├── launch_viz.py                 # FiftyOne interactive visual profiling server
-│   └── visualizaciones/              # Production-ready figure generators
-├── tests/                            # Comprehensive PyTest test suite (unit + integration)
-├── pyproject.toml                    # Poetry dependency specification & project metadata
-└── README.md                         # Publication documentation
+│       ├── core/                         # Core math: sampling.py, mixture.py, mrf.py, skeleton.py
+│       ├── datasets/                     # Unified loaders: coco.py, crowdpose.py, ochuman.py
+│       ├── models/                       # Framework-agnostic adapters (MMPoseAdapter, resolver.py)
+│       ├── tta/                          # Invertible TTA engine (engine.py, inverse.py)
+│       └── utils/                        # Metrics (metrics.py), typing, and visual tools
+└── tests/                                # Comprehensive PyTest test suite (unit + integration)
 ```
 
 ---
@@ -143,61 +271,71 @@ robust-pose-tta/
 ## ⚙️ Installation & Environment Setup
 
 ### Prerequisites
-- Linux / Windows / macOS
-- Python 3.11+
-- CUDA 11.8+ / 12.1+ (for GPU acceleration)
+- Python 3.11 (`python --version`)
+- [Poetry](https://python-poetry.org/) package manager (`pip install poetry`)
+- CUDA 11.8+ / 12.1+ (recommended for GPU acceleration; CPU fallback supported)
 
 ### Step-by-Step Installation
 
-1. **Clone the repository:**
 ```bash
+# 1. Clone the repository
 git clone https://github.com/santiago-git19/robust-pose-tta.git
 cd robust-pose-tta
-```
 
-2. **Install dependencies via Poetry:**
-```bash
+# 2. Install base dependencies via Poetry
 poetry install
+
+# 3. Setup local MMPose engine & download model checkpoints
+poetry run python scripts/models_installation/setup_models.py
+
+# 4. Install OpenMMLab Core Engines (Precompiled Wheels)
+poetry run pip install chumpy==0.70 --no-build-isolation
+
+# For GPU (CUDA 12.1 / PyTorch 2.1):
+poetry run pip install mmcv==2.1.0 -f https://download.openmmlab.com/mmcv/dist/cu121/torch2.1/index.html
+# (For CPU-only environments, use: https://download.openmmlab.com/mmcv/dist/cpu/torch2.1/index.html)
+
+poetry run mim install "mmdet==3.2.0"
+poetry run pip install -e models/mmpose --no-build-isolation
+
+# 5. Verify installation & environment health
+poetry run python src/tests/check_env.py
+poetry run pytest src/tests --ignore=models/mmpose -v
 ```
 
-3. **Verify installation and run test suite:**
+> **Automated Makefile Alternative (Linux / macOS / Git Bash)**:
+> ```bash
+> make setup-models
+> make install BACKEND=cuda   # or BACKEND=cpu
+> make check
+> ```
+
+---
+
+## 🚀 One-Click Scientific Reproduction Suite
+
+To reproduce all quantitative metrics, uncertainty calibration plots, and publication figures in seconds:
+
 ```bash
-poetry run pytest src/tests/ -v
+# Step 1: Download precomputed benchmark parquets (27 files, ~55 MB)
+poetry run python scripts/download_benchmark_data.py
+
+# Step 2: Reproduce all 5 Qualitative Paper Figures + Methodology Diagram (~30s)
+poetry run python scripts/reproduce_all.py --figures
+
+# Step 3: Reproduce all Uncertainty Calibration Plots (ECE, KDE, Beta Optimization) (~50s)
+poetry run python scripts/reproduce_all.py --uncertainty
+
+# Step 4: Reproduce everything end-to-end (Data + Figures + Uncertainty + Tests)
+poetry run python scripts/reproduce_all.py --all
 ```
 
 ---
 
-## 📊 Dataset Preparation
-
-The framework natively supports three standard human pose estimation benchmarks:
-
-| Dataset | Split | Images / Annotations | Description |
-| :--- | :--- | :--- | :--- |
-| **COCO 2017** | `val2017` | 5,000 images / 11,000 instances | Standard in-the-wild benchmark |
-| **CrowdPose** | `test` | 2,000 images / 8,000 instances | Dense crowd & severe inter-person occlusion |
-| **OCHuman** | `val` / `test` | 4,731 instances | Extreme multi-person overlap ($>0.5$ IoU) |
-
-Datasets are expected in the `data/` directory:
-```
-data/
-├── coco/
-│   ├── annotations/person_keypoints_val2017.json
-│   └── val2017/
-├── crowdpose/
-│   ├── annotations/crowdpose_test.json
-│   └── images/
-└── ochuman/
-    ├── annotations/ochuman_coco_format_val_range_0.00_1.00.json
-    └── images/
-```
-
----
-
-## 🚀 Quickstart: Python API
+## 💻 Quickstart: Python API
 
 ```python
 import cv2
-import numpy as np
 from pose_uncertainty.models.adapters import MMPoseAdapter
 from pose_uncertainty.tta.engine import TTAEngine
 from pose_uncertainty.core.sampling import sample_from_heatmap
@@ -207,24 +345,23 @@ from pose_uncertainty.core.mrf import KinematicTreeMRF
 # 1. Initialize Pose Backbone Adapter
 adapter = MMPoseAdapter(
     model_name="hrnet_w32",
-    config_path="configs/model/hrnet_w32.yaml",
-    checkpoint_path="checkpoints/hrnet_w32_coco_256x192.pth",
+    config_path="models/mmpose/configs/body_2d_keypoint/topdown_heatmap/coco/td-hm_hrnet-w32_8xb64-210e_coco-256x192.py",
+    checkpoint_path="models/weights/hrnet_w32.pth",
     device="cuda"
 )
 
 # 2. Ingest Image & Generate Multi-Scale TTA Batch
 image = cv2.imread("data/sample.jpg")
-bbox = [100, 150, 200, 400]  # [x, y, w, h]
-tta_engine = TTAEngine(scales=[0.85, 1.0, 1.15], enable_flip=True)
+bbox = [120, 80, 180, 360]  # [x, y, w, h]
+tta_engine = TTAEngine(scales=[0.85, 0.925, 1.0, 1.075, 1.15], enable_flip=True)
 
+# 3. Continuous Sharpness-Weighted Aggregation
 batch = tta_engine.prepare_batch(image, bbox)
 heatmaps = [adapter.predict(view["image"], view["bbox"]) for view in batch]
-
-# 3. Sharpness-Weighted Aggregation
 agg_heatmap = tta_engine.aggregate_heatmaps(heatmaps, batch)
 
-# 4. Continuous Sampling & Robust GMM Fitting
-samples = sample_from_heatmap(agg_heatmap, num_samples=1000, temperature=0.8)
+# 4. Stochastic Sampling & Robust Mixture Fitting
+samples = sample_from_heatmap(agg_heatmap, num_samples=1000, temperature=0.3, seed=42)
 gmm = RobustGaussianMixture(n_components=2, uniform_weight=0.05)
 gmm.fit(samples)
 
@@ -236,57 +373,11 @@ print("Calibrated Pose Coordinates:\n", calibrated_pose)
 
 ---
 
-## 🧪 Reproducing Benchmark Experiments
-
-All experiment pipelines are orchestrated via **Hydra**. Parameter overrides can be passed directly via the command line:
-
-### 1. Standard Benchmark Evaluation (COCO val2017)
-```bash
-poetry run python experiments/run_benchmark.py dataset=coco model=hrnet_w32 tta=full
-```
-
-### 2. Multi-Person Occlusion Stress Test (CrowdPose & OCHuman)
-```bash
-# Evaluate on CrowdPose Test
-poetry run python experiments/run_benchmark.py dataset=crowdpose model=vitpose_small tta=full
-
-# Evaluate on OCHuman Val under extreme occlusion
-poetry run python experiments/run_benchmark.py dataset=ochuman model=hrnet_w32 tta=full
-```
-
-### 3. Low-Resolution & Quality Degradation Stress Tests
-```bash
-# 0.5x Downscaling Stress Test
-poetry run python experiments/run_benchmark.py dataset.resize_scale=0.5 force_rerun=true
-
-# Additive Gaussian Noise + Severe Spatial Blur
-poetry run python experiments/run_benchmark.py dataset.noise_sigma=25.0 dataset.blur_kernel_size=7
-```
-
----
-
-## 🔍 Diagnostic Cohort System & Visual Analytics
-
-The evaluation harness automatically categorizes each evaluated prediction into distinct diagnostic cohorts for error analysis:
-
-1. **Wins ($\Delta\mathrm{OKS} \ge +0.05$)**: Significant localization improvement over single-pass baseline.
-2. **Regressions ($\Delta\mathrm{OKS} \le -0.05$)**: Cases where TTA or GMM introduced spatial drift.
-3. **High Uncertainty ($\mathrm{Tr}(\boldsymbol{\Sigma}) > \tau_{\mathrm{high}}$)**: Occluded joints with wide spatial variance.
-4. **Multimodal Ambiguities ($\mathrm{BIC}_2 < \mathrm{BIC}_1$)**: Detected candidate swaps and limb ambiguities.
-
-### Launching the Interactive FiftyOne Explorer
-To explore qualitative predictions, heatmaps, and spatial confidence ellipses interactively:
-```bash
-poetry run python experiments/launch_viz.py --dataset-dir outputs/benchmark/
-```
-
----
-
 ## 📓 Jupyter Notebooks Experimental Suite
 
-The repository includes **17 fully documented, interactive Jupyter Notebooks** with complete precomputed outputs:
+The repository provides **17 interactive Jupyter notebooks** covering the complete developmental progression:
 
-| Notebook | Topic & Scope |
+| Notebook | Focus Area |
 | :--- | :--- |
 | [`03_test_coco_loader.ipynb`](notebooks/03_test_coco_loader.ipynb) | COCO 2017 dataloader verification, keypoint parsing, and lazy loading. |
 | [`04_test_crowdpose_loader.ipynb`](notebooks/04_test_crowdpose_loader.ipynb) | CrowdPose 14-keypoint dataset ingestion and crowd visualization. |
@@ -308,35 +399,28 @@ The repository includes **17 fully documented, interactive Jupyter Notebooks** w
 
 ---
 
-## 📈 Empirical Results & Ablation Studies
+## 🔮 Limitations & Multi-View 3D Extensibility
 
-### Primary Benchmark Performance ($\mathrm{AP}$ / $\mathrm{OKS}$)
+### Limitations
+1. **CPU Iterative Mixture Latency**: While the single-threaded CPU implementation of the EM loop currently limits throughput to $0.5 - 0.7\ \text{FPS}$, batch-tensor GPU parallelization across all 17 joints provides an immediate pathway to substantially enhance overall throughput toward interactive frame rates.
+2. **2D Perspective Foreshortening**: 2D Euclidean bone priors cannot distinguish between anatomical deformation and depth foreshortening along the optical axis.
 
-| Architecture | Dataset | Baseline $\mathrm{AP}$ | Baseline $\mathrm{AP}_{50}$ | **Ours (TTA+GMM+MRF)** | $\mathbf{\Delta}\mathrm{AP}$ |
-| :--- | :--- | :---: | :---: | :---: | :---: |
-| **HRNet-W32** | COCO val2017 | 74.4 | 90.5 | **76.1** | **+1.7** |
-| **HRNet-W32** | CrowdPose | 66.2 | 84.1 | **69.8** | **+3.6** |
-| **HRNet-W32** | OCHuman | 41.5 | 58.2 | **46.8** | **+5.3** |
-| **ViTPose-Small** | COCO val2017 | 75.8 | 91.2 | **77.3** | **+1.5** |
-| **ViTPose-Small** | CrowdPose | 68.4 | 85.9 | **71.9** | **+3.5** |
-| **ResNet-50** | COCO val2017 | 70.4 | 88.0 | **72.6** | **+2.2** |
-
-### Key Ablation Insights
-1. **Sharpness Weighting vs. Uniform Averaging**: Sharpness weighting prevents out-of-frame scale degradation, yielding $+1.1\ \mathrm{AP}$ gain in multi-scale TTA.
-2. **Robust Uniform Absorber ($\pi_u$)**: Reduces covariance matrix estimation error by $42\%$ in noisy background conditions.
-3. **Kinematic MRF Graph Correction**: Resolves $78.4\%$ of left/right ankle and wrist swaps under high crowding.
+### Multi-View 3D Extensibility
+Standard multi-view pose estimation models project 2D heatmaps into massive 3D voxel grids, suffering from the $\mathcal{O}(N^3)$ dimensional memory curse. Because our framework parameterizes 2D heatmaps into continuous probability distributions:
+- Multi-camera 2D GMM rays can be algebraically triangulated into **Continuous 3D Gaussian Mixtures** ($\boldsymbol{\mu} \in \mathbb{R}^3, \mathbf{\Sigma} \in \mathbb{R}^{3\times3}$) without voxel discretization.
+- Kinematic tree MRF belief propagation executed directly in 3D Euclidean space uses true physical bone lengths, naturally resolving the 2D projective foreshortening dilemma.
 
 ---
 
 ## 📑 Citation
 
-If you use this codebase or methodology in your academic research, please cite:
+If you use this codebase or methodology in your research, please cite:
 
 ```bibtex
-@article{robust_pose_tta_2026,
-  title   = {Robust Test-Time Adaptation with Probabilistic Mixture Modeling and Kinematic MRF Priors for Human Pose Estimation},
-  author  = {Santiago et al.},
-  journal = {arXiv preprint},
+@article{reina2026robustposetta,
+  title   = {Human Pose Estimation by Probabilistic Mixtures of Gaussian and Uniform Distributions: Continuous Modeling, Test-Time Adaptation, and Uncertainty Calibration},
+  author  = {Reina-Alguacil, Santiago and L{\'o}pez-Rubio, Ezequiel},
+  journal = {Information Fusion},
   year    = {2026}
 }
 ```
@@ -347,4 +431,4 @@ If you use this codebase or methodology in your academic research, please cite:
 
 This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
 
-Developed in compliance with **IEEE / Elsevier Q1 Scientific Software Standards**. Built upon open-source contributions from [PyTorch](https://pytorch.org/), [MMPose](https://github.com/open-mmlab/mmpose), [Hydra](https://hydra.cc/), and [FiftyOne](https://voxel51.com/fiftyone/).
+Developed at the **University of Málaga**. Built upon open-source foundations from [PyTorch](https://pytorch.org/), [MMPose](https://github.com/open-mmlab/mmpose), [Hydra](https://hydra.cc/), and [FiftyOne](https://voxel51.com/fiftyone/).
