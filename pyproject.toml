@@ -2,7 +2,10 @@
 name = "robust-pose-tta"
 version = "0.1.0"
 description = "Test-Time Adaptation for Robust Human Pose Estimation with Uncertainty Quantification"
+authors = ["Santiago Reina-Alguacil <santiagoreina@uma.es>", "Ezequiel López-Rubio <ezeqlr@uma.es>"]
+license = "MIT"
 readme = "README.md"
+repository = "https://github.com/santiago-git19/robust-pose-tta"
 packages = [{include = "pose_uncertainty", from = "src"}]
 
 [[tool.poetry.source]]
