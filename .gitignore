@@ -17,6 +17,7 @@ dist/
 data/
 outputs/
 models/
+Paper/
 *.pth
 *.ckpt
 *.tar.gz
