@@ -191,10 +191,14 @@ def main():
     parser.add_argument("--out-dir", type=str, default=str(default_out_dir), help="Output directory")
     args = parser.parse_args()
 
-    paper_root = (
-        _PROJECT_ROOT.parent / "Paper"
-        if (_PROJECT_ROOT.parent / "Paper").exists()
-        else _PROJECT_ROOT / "Paper"
+    data_root = (
+        _PROJECT_ROOT / "outputs" / "data"
+        if (_PROJECT_ROOT / "outputs" / "data" / "Resultados_Incertidumbre").exists()
+        else (
+            _PROJECT_ROOT.parent / "Paper"
+            if (_PROJECT_ROOT.parent / "Paper").exists()
+            else _PROJECT_ROOT / "Paper"
+        )
     )
     output_dir = Path(args.out_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -206,7 +210,7 @@ def main():
     log.info("==================================================")
 
     for ds in datasets:
-        df = load_dataset_unrolled(args.model, ds, paper_root)
+        df = load_dataset_unrolled(args.model, ds, data_root)
         plot_single_dataset_kde(df, output_dir, args.model, ds, suffix="All")
 
     log.info(f"All 3 dataset KDE plots generated successfully in: {output_dir}")

@@ -223,10 +223,14 @@ def main():
     parser.add_argument("--out-dir", type=str, default=str(default_out_dir), help="Output directory")
     args = parser.parse_args()
 
-    paper_root = (
-        _PROJECT_ROOT.parent / "Paper"
-        if (_PROJECT_ROOT.parent / "Paper").exists()
-        else _PROJECT_ROOT / "Paper"
+    data_root = (
+        _PROJECT_ROOT / "outputs" / "data"
+        if (_PROJECT_ROOT / "outputs" / "data" / "Resultados_Incertidumbre").exists()
+        else (
+            _PROJECT_ROOT.parent / "Paper"
+            if (_PROJECT_ROOT.parent / "Paper").exists()
+            else _PROJECT_ROOT / "Paper"
+        )
     )
     output_dir = Path(args.out_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -239,7 +243,7 @@ def main():
     log.info("==================================================")
 
     for ds in datasets:
-        df = load_dataset_unrolled(args.model, ds, paper_root)
+        df = load_dataset_unrolled(args.model, ds, data_root)
         datasets_data[ds] = df
 
     # 1. Generate 3x3 Combined Matrix Figure

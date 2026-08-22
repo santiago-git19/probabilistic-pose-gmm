@@ -628,10 +628,14 @@ def main() -> None:
     parser.add_argument("--out-dir", type=str, default=str(default_out_dir), help="Output directory")
     args = parser.parse_args()
 
-    paper_root = (
-        project_root.parent / "Paper"
-        if (project_root.parent / "Paper").exists()
-        else project_root / "Paper"
+    data_root = (
+        project_root / "outputs" / "data"
+        if (project_root / "outputs" / "data" / "Resultados_Incertidumbre").exists()
+        else (
+            project_root.parent / "Paper"
+            if (project_root.parent / "Paper").exists()
+            else project_root / "Paper"
+        )
     )
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -645,7 +649,7 @@ def main() -> None:
 
         datasets_data = {}
         for ds in datasets:
-            df = load_dataset_unrolled(model_name, ds, paper_root)
+            df = load_dataset_unrolled(model_name, ds, data_root)
             datasets_data[ds] = df
 
         plot_3x3_roc_matrix(model_name, datasets_data, out_dir)
