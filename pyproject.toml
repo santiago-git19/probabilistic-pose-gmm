@@ -27,8 +27,7 @@ torchvision = {version = "0.16.2", source = "pytorch_cuda"}
 openmim = "^0.3.0"
 mmengine = "^0.8.0"
 wheel = "^0.46.3"
-setuptools = "<70.0.0" 
-mmpose = {path = "models/mmpose", develop = true}
+setuptools = "<70.0.0"
 pip = "^26.0"
 mmpretrain = "1.2.0"
 seaborn = "^0.13.2"

@@ -32,16 +32,13 @@ jobs:
         run: |
           python scripts/models_installation/setup_models.py
 
-      - name: Pre-install Legacy Chumpy
-        run: |
-          poetry run pip install chumpy==0.70 --no-build-isolation
-
       - name: Install Dependencies
         run: |
           poetry install --no-interaction
 
       - name: Install OpenMMLab Core Engines
         run: |
+          poetry run pip install chumpy==0.70 --no-build-isolation
           poetry run pip install mmcv==2.1.0 -f https://download.openmmlab.com/mmcv/dist/cpu/torch2.1/index.html
           poetry run mim install "mmdet==3.2.0"
           poetry run pip install -e models/mmpose --no-build-isolation
