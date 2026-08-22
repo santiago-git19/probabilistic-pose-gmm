@@ -344,41 +344,121 @@ poetry run python scripts/reproduce_all.py --all
 
 ## 💻 Quickstart: Python API
 
+The following self-contained example runs the complete end-to-end inference and uncertainty calibration pipeline using the exact configuration parameters from `configs/`:
+
 ```python
 import cv2
+import numpy as np
+from pose_uncertainty.models import create_model_adapter
 from pose_uncertainty.models.adapters import MMPoseAdapter
-from pose_uncertainty.tta.engine import TTAEngine
+from pose_uncertainty.pipeline.tta import TTAEngine
+from pose_uncertainty.pipeline.scale_tta import ScaleAugConfig, ScaleAugmentor, compute_heatmap_confidence
 from pose_uncertainty.core.sampling import sample_from_heatmap
-from pose_uncertainty.core.mixture import RobustGaussianMixture
-from pose_uncertainty.core.mrf import KinematicTreeMRF
+from pose_uncertainty.core.mixture import select_best_model
+from pose_uncertainty.core.mrf_decoder import MRFDecoder, UnaryPotential
+from pose_uncertainty.core.skeleton import COCO_SKELETON, COCO_SKELETON_EDGES
+from pose_uncertainty.utils.types import StandardizedHeatmap
 
-# 1. Initialize Pose Backbone Adapter
-adapter = MMPoseAdapter(
-    model_name="hrnet_w32",
-    config_path="models/mmpose/configs/body_2d_keypoint/topdown_heatmap/coco/td-hm_hrnet-w32_8xb64-210e_coco-256x192.py",
-    checkpoint_path="models/weights/hrnet_w32.pth",
-    device="cuda"
-)
+# 1. Initialize Pose Backbone Adapter (from configs/model/hrnet_w32.yaml)
+adapter = create_model_adapter("hrnet_w32", device="cuda")
 
-# 2. Ingest Image & Generate Multi-Scale TTA Batch
-image = cv2.imread("data/sample.jpg")
-bbox = [120, 80, 180, 360]  # [x, y, w, h]
-tta_engine = TTAEngine(scales=[0.85, 0.925, 1.0, 1.075, 1.15], enable_flip=True)
+# 2. Setup Multi-Scale & Geometric TTA (from configs/tta.yaml)
+image = cv2.imread("data/sample.jpg")                  # Input RGB image (H, W, 3)
+bbox = (120.0, 80.0, 180.0, 360.0)                   # Bounding box (x, y, w, h)
+img_h, img_w = image.shape[:2]
 
-# 3. Continuous Sharpness-Weighted Aggregation
-batch = tta_engine.prepare_batch(image, bbox)
-heatmaps = [adapter.predict(view["image"], view["bbox"]) for view in batch]
-agg_heatmap = tta_engine.aggregate_heatmaps(heatmaps, batch)
+scale_aug = ScaleAugmentor(ScaleAugConfig(
+    enabled=True,
+    scales=[0.85, 0.925, 1.0, 1.075, 1.15],
+    aggregation="weighted_mean",
+    sharpness_scale=10.0,
+    peak_exponent=1.5,
+    sharpness_exponent=1.5,
+    epsilon=1e-10,
+))
+tta_engine = TTAEngine(config={"flip": {"enabled": True}, "seed": 42})
 
-# 4. Stochastic Sampling & Robust Mixture Fitting
-samples = sample_from_heatmap(agg_heatmap, num_samples=1000, temperature=0.3, seed=42)
-gmm = RobustGaussianMixture(n_components=2, uniform_weight=0.05)
-gmm.fit(samples)
+# 3. Multi-Scale TTA Batch Inference & Continuous Sigmoidal Aggregation
+scaled_bboxes = scale_aug.get_scaled_bboxes(bbox, img_h, img_w)
+heatmaps_per_scale, confs_per_scale, metadata_per_scale = [], [], []
+metadata_ref = None
 
-# 5. Decode Global Pose via Kinematic MRF
-mrf = KinematicTreeMRF(skeleton="coco")
-calibrated_pose = mrf.decode(gmm.get_candidates())
-print("Calibrated Pose Coordinates:\n", calibrated_pose)
+for sbbox in scaled_bboxes:
+    aug_images, aug_metas = tta_engine.prepare_batch(image)
+    tta_bboxes = [
+        (img_w - 1.0 - (sbbox[0] + sbbox[2]), sbbox[1], sbbox[2], sbbox[3]) if meta.is_flipped else sbbox
+        for meta in aug_metas
+    ]
+    heatmaps_list = adapter.predict_batch(aug_images, bboxes=tta_bboxes)
+
+    accum = []
+    scale_metadata = None
+    for std_hm, meta in zip(heatmaps_list, aug_metas):
+        hm = std_hm.data.copy()
+        if meta.is_flipped:
+            hm = TTAEngine.inverse_flip_heatmap(hm, adapter.flip_pairs, shift_heatmap=adapter.shift_heatmap)
+        accum.append(hm)
+        if scale_metadata is None and not meta.is_flipped and std_hm.metadata is not None:
+            scale_metadata = std_hm.metadata
+
+    metadata_per_scale.append(scale_metadata)
+    if all(abs(a - b) < 1.0 for a, b in zip(sbbox, bbox)) and scale_metadata is not None:
+        metadata_ref = scale_metadata
+
+    scale_avg = np.mean(accum, axis=0).astype(np.float32)
+    heatmaps_per_scale.append(scale_avg)
+    confs_per_scale.append(compute_heatmap_confidence(
+        scale_avg, sharpness_scale=10.0, peak_exponent=1.5, sharpness_exponent=1.5, epsilon=1e-10
+    ))
+
+if metadata_ref is None:
+    metadata_ref = next((m for m in metadata_per_scale if m is not None), None)
+
+# Continuous Sharpness-Weighted Aggregation across scales
+agg_heatmap = scale_aug.aggregate(heatmaps_per_scale, confs_per_scale, metadata_per_scale, metadata_ref)
+
+# 4. Stochastic Sampling & Robust GMM Fitting (from configs/sampling.yaml & configs/mixture.yaml)
+unary_potentials = {}
+num_kp = agg_heatmap.shape[0]
+for k in range(num_kp):
+    # Draw 1000 Monte Carlo samples per keypoint (from configs/sampling.yaml)
+    samples = sample_from_heatmap(
+        agg_heatmap[k], num_samples=1000, strategy="rejection", temperature=0.3, use_dequantization=True, seed=42 + k
+    )
+    mixture_res = select_best_model(
+        samples.astype(np.float64), aic_weight=0.0, bic_weight=1.0, reg_covar=1e-4, max_iter=100, tol=1e-3, random_state=42 + k
+    )
+    means = [comp.mean for comp in mixture_res.components]
+    covs = [comp.covariance for comp in mixture_res.components]
+    weights = [comp.weight for comp in mixture_res.components]
+    unary_potentials[k] = UnaryPotential(means=means, covariances=covs, weights=weights)
+
+# 5. Decode Global Pose via Kinematic MRF Belief Propagation (from configs/mixture.yaml)
+mrf = MRFDecoder(skeleton=COCO_SKELETON, bone_length_sigma=2.0, use_covariance_score=True)
+calibrated_dict = mrf.decode(unary_potentials, area=float(bbox[2] * bbox[3]))
+calibrated_pose_hm = np.array([calibrated_dict[k] for k in range(num_kp)], dtype=np.float32)
+
+# 6. Project Heatmap Coordinates to Original Image Space
+ref_hm_obj = StandardizedHeatmap(data=agg_heatmap, original_size=(img_h, img_w), metadata=metadata_ref)
+final_coords = MMPoseAdapter.transform_heatmap_coords_to_image(calibrated_pose_hm, ref_hm_obj)
+
+# 7. Render Skeleton & Keypoints Overlaid on Image
+vis_img = image.copy()
+x, y, w, h = [int(v) for v in bbox]
+cv2.rectangle(vis_img, (x, y), (x + w, y + h), (255, 180, 0), 2)
+
+for parent_idx, child_idx in COCO_SKELETON_EDGES:
+    pt1 = tuple(np.round(final_coords[parent_idx]).astype(int))
+    pt2 = tuple(np.round(final_coords[child_idx]).astype(int))
+    cv2.line(vis_img, pt1, pt2, (0, 255, 128), 2, cv2.LINE_AA)
+
+for kpt_idx, (kx, ky) in enumerate(final_coords):
+    center = (int(round(kx)), int(round(ky)))
+    cv2.circle(vis_img, center, 4, (0, 100, 255), -1, cv2.LINE_AA)
+    cv2.circle(vis_img, center, 5, (255, 255, 255), 1, cv2.LINE_AA)
+
+cv2.imwrite("outputs/calibrated_pose_demo.jpg", cv2.cvtColor(vis_img, cv2.COLOR_RGB2BGR))
+print("Saved calibrated pose visualization to 'outputs/calibrated_pose_demo.jpg'!")
 ```
 
 ---
