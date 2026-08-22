@@ -40,6 +40,7 @@ project_root = Path(__file__).resolve().parents[3]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
+from src.pose_uncertainty.core.skeleton import COCO_BONE_LENGTH_STATS
 from src.pose_uncertainty.evaluation.storage import load_deep_analysis
 from src.pose_uncertainty.models.adapters import MMPoseAdapter
 from src.pose_uncertainty.utils.types import StandardizedHeatmap
@@ -266,9 +267,30 @@ def detect_packet_mode(packet: Dict[str, Any], explicit_mode: str = "auto") -> s
 
 
 def search_packet(image_id: int) -> Optional[Path]:
-    """Search outputs directory for packet matching image_id."""
-    for p in Path("outputs").rglob(f"*_{image_id}.pkl.gz"):
+    """Search for packet matching image_id with priority given to visual candidate packets."""
+    priority_paths = [
+        TARGET_OUTPUT_ROOT / "packets" / f"candidate_{image_id}.pkl.gz",
+        TARGET_OUTPUT_ROOT / "packets" / f"Wins_{image_id}.pkl.gz",
+        TARGET_OUTPUT_ROOT / "packets" / f"High_Uncertainty_{image_id}.pkl.gz",
+        TARGET_OUTPUT_ROOT / "packets" / f"Regressions_{image_id}.pkl.gz",
+    ]
+    for p in priority_paths:
+        if p.exists():
+            return p
+
+    packets_dir = TARGET_OUTPUT_ROOT / "packets"
+    if packets_dir.exists():
+        for p in packets_dir.glob(f"*{image_id}*.pkl.gz"):
+            return p
+
+    for p in (project_root / "outputs").rglob(f"*_{image_id}.pkl.gz"):
         return p
+
+    paper_vis = project_root.parent / "Paper" / "Paper" / "figures" / "visualizaciones"
+    if paper_vis.exists():
+        for p in paper_vis.rglob(f"*{image_id}*.pkl.gz"):
+            return p
+
     return None
 
 
@@ -513,8 +535,9 @@ def render_figure_1(packet: Dict[str, Any], focus_kp_idx: int, out_dir: Path, ca
         ax_c.axis("off")
 
     # Save PDF & PNG
-    pdf_out = out_dir / f"figure_1_swaps_{cand_name}.pdf"
-    png_out = out_dir / f"figure_1_swaps_{cand_name}.png"
+    file_prefix = f"figure_1_swaps_{cand_name}" if cand_name else "figure_1_swaps"
+    pdf_out = out_dir / f"{file_prefix}.pdf"
+    png_out = out_dir / f"{file_prefix}.png"
     plt.savefig(pdf_out, dpi=300, bbox_inches="tight")
     plt.savefig(png_out, dpi=300, bbox_inches="tight")
     plt.close(fig)
@@ -639,7 +662,8 @@ def render_figure_2(win_pkt: Dict[str, Any], fail_pkt: Dict[str, Any], win_kp_id
     Fila 2 (Limitación 2D): (a2) Contexto solapado, (b2) GMM vs Banda Prior, (c2) MRF rigidez arrastra por escorzo.
     """
     if out_dir is None:
-        out_dir = TARGET_OUTPUT_ROOT / "figura_2_mrf_dilemma"
+        out_dir = TARGET_OUTPUT_ROOT / "figure_2_mrf_dilemma"
+    out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     plt.style.use("seaborn-v0_8-white")
     fig = plt.figure(figsize=(16, 9.5), dpi=300)
@@ -659,8 +683,9 @@ def render_figure_2(win_pkt: Dict[str, Any], fail_pkt: Dict[str, Any], win_kp_id
     # Draw Fila 2: Fail Case (2B)
     _draw_mrf_row_panels(ax_a2, ax_b2, ax_c2, fail_pkt, focus_kp_idx=fail_kp_idx, row_idx=2, is_success=False)
 
-    pdf_out = out_dir / f"figure_2_mrf_{cand_name}.pdf"
-    png_out = out_dir / f"figure_2_mrf_{cand_name}.png"
+    file_prefix = f"figure_2_mrf_dilemma_{cand_name}" if cand_name else "figure_2_mrf_dilemma"
+    pdf_out = out_dir / f"{file_prefix}.pdf"
+    png_out = out_dir / f"{file_prefix}.png"
     plt.savefig(pdf_out, dpi=300, bbox_inches="tight")
     plt.savefig(png_out, dpi=300, bbox_inches="tight")
     plt.close(fig)
@@ -892,8 +917,9 @@ def render_figure_3(packet: Dict[str, Any], focus_kp_idx: int, out_dir: Path, ca
     for bar, v, txt in zip(bars, vals, text_labels):
         ax_c.text(v + 0.025, bar.get_y() + bar.get_height() / 2, txt, va="center", fontweight="bold", fontsize=9.0)
 
-    pdf_out = out_dir / f"figure_3_ood_{cand_name}.pdf"
-    png_out = out_dir / f"figure_3_ood_{cand_name}.png"
+    file_prefix = f"figure_3_ood_alert_{cand_name}" if cand_name else "figure_3_ood_alert"
+    pdf_out = out_dir / f"{file_prefix}.pdf"
+    png_out = out_dir / f"{file_prefix}.png"
     plt.savefig(pdf_out, dpi=300, bbox_inches="tight")
     plt.savefig(png_out, dpi=300, bbox_inches="tight")
     plt.close(fig)
@@ -1144,8 +1170,9 @@ def render_figure_4(packet: Dict[str, Any], focus_kp_idx: int, out_dir: Path, ca
     for bar, v in zip(bars, bar_vals):
         ax_f.text(v + 0.025, bar.get_y() + bar.get_height() / 2, f"{v:.2f}", va="center", fontweight="bold", fontsize=9.0)
 
-    pdf_out = out_dir / f"figure_4_poisoning_{cand_name}.pdf"
-    png_out = out_dir / f"figure_4_poisoning_{cand_name}.png"
+    file_prefix = f"figure_4_heatmap_poisoning_{cand_name}" if cand_name else "figure_4_heatmap_poisoning"
+    pdf_out = out_dir / f"{file_prefix}.pdf"
+    png_out = out_dir / f"{file_prefix}.png"
     plt.savefig(pdf_out, dpi=300, bbox_inches="tight")
     plt.savefig(png_out, dpi=300, bbox_inches="tight")
     plt.close(fig)
@@ -1352,8 +1379,9 @@ def render_figure_5(base_pkt: Dict[str, Any], out_dir: Path, cand_name: str, mod
                 spine.set_visible(True)
         ax_hm.axis("off")
 
-    pdf_out = out_dir / f"figure_5_uniform_{cand_name}.pdf"
-    png_out = out_dir / f"figure_5_uniform_{cand_name}.png"
+    file_prefix = f"figure_5_uniform_noise_{cand_name}" if cand_name else "figure_5_uniform_noise"
+    pdf_out = out_dir / f"{file_prefix}.pdf"
+    png_out = out_dir / f"{file_prefix}.png"
     plt.savefig(pdf_out, dpi=300, bbox_inches="tight")
     plt.savefig(png_out, dpi=300, bbox_inches="tight")
     plt.close(fig)
@@ -1366,91 +1394,73 @@ def render_figure_5(base_pkt: Dict[str, Any], out_dir: Path, cand_name: str, mod
 
 def main() -> None:
     logger.info("=" * 80)
-    logger.info("GENERATING ALL PUBLICATION FIGURES (3 CANDIDATES PER FIGURE)")
+    logger.info("GENERATING ALL 5 PAPER FIGURES (EXACT PUBLICATION SPECIFICATIONS)")
     logger.info("Destination: %s", TARGET_OUTPUT_ROOT)
     logger.info("=" * 80)
 
     TARGET_OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
 
     # --------------------------------------------------------------------------
-    # 1. FIGURA 1: SWAPS (3 Candidatos: Wins_462, Wins_20, Wins_31)
+    # 1. FIGURE 1: TOPOLOGICAL SWAP DISAMBIGUATION (Candidate 460, L_Ankle kp=15)
     # --------------------------------------------------------------------------
-    fig1_cands = [
-        ("candidato_1_image_462", 462, 16), # R_Ankle
-        ("candidato_2_image_20", 20, 9),    # L_Wrist
-        ("candidato_3_image_31", 31, 5),    # L_Shoulder
-    ]
-    for c_dir_name, img_id, focus_kp in fig1_cands:
-        p_path = search_packet(img_id)
-        if p_path and p_path.exists():
-            pkt = load_deep_analysis(str(p_path))
-            out_folder = TARGET_OUTPUT_ROOT / "figura_1_swaps" / c_dir_name
-            render_figure_1(pkt, focus_kp, out_folder, c_dir_name)
+    p_460 = search_packet(460)
+    if p_460 and p_460.exists():
+        pkt_460 = load_deep_analysis(str(p_460))
+        out_f1 = TARGET_OUTPUT_ROOT / "figure_1_swaps"
+        render_figure_1(pkt_460, focus_kp_idx=15, out_dir=out_f1, cand_name="", mode="basic")
+        logger.info("[SUCCESS] Rendered Figure 1 -> %s", out_f1 / "figure_1_swaps.pdf")
 
     # --------------------------------------------------------------------------
-    # 2. FIGURA 2: MRF DILEMMA (3 Pares Constructivo/Destructivo)
+    # 2. FIGURE 2: KINEMATIC MRF DILEMMA (Win 130 kp=16 vs Fail 116555 kp=15)
     # --------------------------------------------------------------------------
-    fig2_pairs = [
-        ("candidato_1_image_107205_vs_424", 107205, 424, 7), # L_Elbow
-        ("candidato_2_image_114_vs_355", 114, 355, 9),        # L_Wrist
-        ("candidato_3_image_36_vs_424", 36, 424, 15),          # L_Ankle
-    ]
-    for c_dir_name, win_id, fail_id, focus_kp in fig2_pairs:
-        p_win = search_packet(win_id)
-        p_fail = search_packet(fail_id)
-        if p_win and p_fail and p_win.exists() and p_fail.exists():
-            w_pkt = load_deep_analysis(str(p_win))
-            f_pkt = load_deep_analysis(str(p_fail))
-            out_folder = TARGET_OUTPUT_ROOT / "figura_2_mrf_dilemma" / c_dir_name
-            render_figure_2(w_pkt, f_pkt, focus_kp, out_folder, c_dir_name)
+    p_130 = search_packet(130)
+    p_116555 = search_packet(116555)
+    if p_130 and p_116555 and p_130.exists() and p_116555.exists():
+        pkt_130 = load_deep_analysis(str(p_130))
+        pkt_116555 = load_deep_analysis(str(p_116555))
+        out_f2 = TARGET_OUTPUT_ROOT / "figure_2_mrf_dilemma"
+        render_figure_2(
+            win_pkt=pkt_130,
+            fail_pkt=pkt_116555,
+            win_kp_idx=16,   # R_Ankle from R_Knee
+            fail_kp_idx=15,  # L_Ankle from L_Knee
+            out_dir=out_f2,
+            cand_name=""
+        )
+        logger.info("[SUCCESS] Rendered Figure 2 -> %s", out_f2 / "figure_2_mrf_dilemma.pdf")
 
     # --------------------------------------------------------------------------
-    # 3. FIGURA 3: OoD UNCERTAINTY (3 Candidatos: 63, 201, 377368)
+    # 3. FIGURE 3: OoD VOLUMETRIC UNCERTAINTY ALERT (Candidate 108525, L_Eye kp=1)
     # --------------------------------------------------------------------------
-    fig3_cands = [
-        ("candidato_1_image_63", 63, 9),      # L_Wrist
-        ("candidato_2_image_201", 201, 10),   # R_Wrist
-        ("candidato_3_image_377368", 377368, 16), # R_Ankle
-    ]
-    for c_dir_name, img_id, focus_kp in fig3_cands:
-        p_path = search_packet(img_id)
-        if p_path and p_path.exists():
-            pkt = load_deep_analysis(str(p_path))
-            out_folder = TARGET_OUTPUT_ROOT / "figura_3_ood_alert" / c_dir_name
-            render_figure_3(pkt, focus_kp, out_folder, c_dir_name)
+    p_108525 = search_packet(108525)
+    if p_108525 and p_108525.exists():
+        pkt_108525 = load_deep_analysis(str(p_108525))
+        out_f3 = TARGET_OUTPUT_ROOT / "figure_3_ood_alert"
+        render_figure_3(pkt_108525, focus_kp_idx=1, out_dir=out_f3, cand_name="", mode="basic")
+        logger.info("[SUCCESS] Rendered Figure 3 -> %s", out_f3 / "figure_3_ood_alert.pdf")
 
     # --------------------------------------------------------------------------
-    # 4. FIGURA 4: HEATMAP POISONING (3 Candidatos: 369503, 462, 153)
+    # 4. FIGURE 4: HEATMAP POISONING UNDER TTA (Candidate 251, L_Knee kp=13)
     # --------------------------------------------------------------------------
-    fig4_cands = [
-        ("candidato_1_image_369503", 369503, 16), # R_Ankle
-        ("candidato_2_image_462", 462, 16),       # R_Ankle
-        ("candidato_3_image_153", 153, 7),        # L_Elbow
-    ]
-    for c_dir_name, img_id, focus_kp in fig4_cands:
-        p_path = search_packet(img_id)
-        if p_path and p_path.exists():
-            pkt = load_deep_analysis(str(p_path))
-            out_folder = TARGET_OUTPUT_ROOT / "figura_4_heatmap_poisoning" / c_dir_name
-            render_figure_4(pkt, focus_kp, out_folder, c_dir_name)
+    p_251 = search_packet(251)
+    if p_251 and p_251.exists():
+        pkt_251 = load_deep_analysis(str(p_251))
+        out_f4 = TARGET_OUTPUT_ROOT / "figure_4_heatmap_poisoning"
+        render_figure_4(pkt_251, focus_kp_idx=13, out_dir=out_f4, cand_name="", mode="tta")
+        logger.info("[SUCCESS] Rendered Figure 4 -> %s", out_f4 / "figure_4_heatmap_poisoning.pdf")
 
     # --------------------------------------------------------------------------
-    # 5. FIGURA 5: UNIFORM TRASH (3 Candidatos: 221754, 82696, 147725)
+    # 5. FIGURE 5: UNIFORM BACKGROUND NOISE ABSORPTION (Candidate 482, L_Ankle kp=15)
     # --------------------------------------------------------------------------
-    fig5_cands = [
-        ("candidato_1_image_221754", 221754),
-        ("candidato_2_image_82696", 82696),
-        ("candidato_3_image_147725", 147725),
-    ]
-    for c_dir_name, img_id in fig5_cands:
-        p_path = search_packet(img_id)
-        if p_path and p_path.exists():
-            pkt = load_deep_analysis(str(p_path))
-            out_folder = TARGET_OUTPUT_ROOT / "figura_5_uniform_trash" / c_dir_name
-            render_figure_5(pkt, out_folder, c_dir_name)
+    p_482 = search_packet(482)
+    if p_482 and p_482.exists():
+        pkt_482 = load_deep_analysis(str(p_482))
+        out_f5 = TARGET_OUTPUT_ROOT / "figure_5_uniform_noise"
+        render_figure_5(pkt_482, out_dir=out_f5, cand_name="", focus_kp_idx=15)
+        logger.info("[SUCCESS] Rendered Figure 5 -> %s", out_f5 / "figure_5_uniform_noise.pdf")
 
     logger.info("=" * 80)
-    logger.info("[SUCCESS] ALL 15 PUBLICATION FIGURES SUCCESSFULLY GENERATED!")
+    logger.info("[SUCCESS] ALL 5 FINAL PAPER FIGURES SUCCESSFULLY GENERATED!")
     logger.info("Check folder: %s", TARGET_OUTPUT_ROOT)
     logger.info("=" * 80)
 

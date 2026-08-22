@@ -56,15 +56,19 @@ from src.pose_uncertainty.core.skeleton import COCO_KEYPOINT_NAMES
 MODELS = ["hrnet_w32", "resnet50", "vitpose_small"]
 DATASETS = ["coco", "crowdpose", "ochuman"]
 
-# Base roots
-paper_root = (
-    project_root.parent / "Paper"
-    if (project_root.parent / "Paper").exists()
-    else project_root / "Paper"
+# Base roots (checks outputs/data first, then fallback)
+data_root = (
+    project_root / "outputs" / "data"
+    if (project_root / "outputs" / "data" / "Resultados_Incertidumbre").exists()
+    else (
+        project_root.parent / "Paper"
+        if (project_root.parent / "Paper").exists()
+        else project_root / "Paper"
+    )
 )
-ROOT_UNCERTAINTY = paper_root / "Resultados_Incertidumbre"
-ROOT_TTA = paper_root / "Resultados_Precision" / "TTA"
-ROOT_MRF = paper_root / "Resultados_Precision" / "Sin_DARK" / "MRF"
+ROOT_UNCERTAINTY = data_root / "Resultados_Incertidumbre"
+ROOT_TTA = data_root / "Resultados_Precision" / "TTA"
+ROOT_MRF = data_root / "Resultados_Precision" / "Sin_DARK" / "MRF"
 
 
 def parse_args() -> argparse.Namespace:
