@@ -282,11 +282,11 @@ robust-pose-tta/
 git clone https://github.com/santiago-git19/robust-pose-tta.git
 cd robust-pose-tta
 
-# 2. Install base dependencies via Poetry
-poetry install
-
-# 3. Setup local MMPose engine & download model checkpoints
+# 2. Setup local MMPose engine & download pretrained model checkpoints
 poetry run python scripts/models_installation/setup_models.py
+
+# 3. Install dependencies via Poetry
+poetry install
 
 # 4. Install OpenMMLab Core Engines (Precompiled Wheels)
 poetry run pip install chumpy==0.70 --no-build-isolation
@@ -314,21 +314,31 @@ poetry run pytest src/tests --ignore=models/mmpose -v
 
 ## 🚀 One-Click Scientific Reproduction Suite
 
-To reproduce all quantitative metrics, uncertainty calibration plots, and publication figures in seconds:
+The repository includes a comprehensive, automated reproduction harness [`scripts/reproduce_all.py`](scripts/reproduce_all.py) to regenerate all publication figures, uncertainty calibration plots, and benchmarks:
 
 ```bash
-# Step 1: Download precomputed benchmark parquets (27 files, ~55 MB)
+# 1. Download packaged benchmark results (~55 MB from Release/Zenodo)
 poetry run python scripts/download_benchmark_data.py
 
-# Step 2: Reproduce all 5 Qualitative Paper Figures + Methodology Diagram (~30s)
+# 2. Reproduce all 5 Qualitative Paper Figures + Methodology Diagram (~30s)
 poetry run python scripts/reproduce_all.py --figures
 
-# Step 3: Reproduce all Uncertainty Calibration Plots (ECE, KDE, Beta Optimization) (~50s)
+# 3. Reproduce all Uncertainty Calibration Plots (ECE, KDE, Beta Optimization) (~50s)
 poetry run python scripts/reproduce_all.py --uncertainty
 
-# Step 4: Reproduce everything end-to-end (Data + Figures + Uncertainty + Tests)
+# 4. Reproduce everything end-to-end (Data + Figures + Uncertainty + Tests)
 poetry run python scripts/reproduce_all.py --all
 ```
+
+### CLI Reproduction Flags
+
+| Flag | Purpose & Generated Artifacts |
+| :--- | :--- |
+| `--all` | Complete end-to-end reproduction: verifies benchmark data, generates all 6 paper figures, produces all uncertainty calibration plots, and executes the test suite. |
+| `--figures` | Generates the **Methodology Pipeline Overview** (`methodology_pipeline_overview.pdf/png`) and all **5 Qualitative Publication Figures** in `outputs/figures/visualizations/`. |
+| `--uncertainty` | Generates all quantitative calibration figures: **ECE 3×3 Matrices**, **OoD KDE Distributions**, **$\beta$ Parameter Optimization Curves**, and **Uniform Noise Boxplots** in `outputs/figures/uncertainty/`. |
+| `--data` | Downloads and verifies the integrity of all 27 precomputed benchmark evaluation parquets in `outputs/data/`. |
+| `--tests` | Runs the full 233 unit and integration PyTest test suite (`src/tests`). |
 
 ---
 
