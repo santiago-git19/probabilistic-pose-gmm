@@ -178,13 +178,20 @@ def main() -> None:
         )
         stages_run.append(("OoD AUROC Degradation Evolution Plots", s9))
 
+        # 3D Thermodynamic Surface & 2D Softmax Fusion
+        s10 = run_stage(
+            "3D Thermodynamic Surface of Softmax Fusion",
+            [py_exec, str(SRC_EXPERIMENTS / "uncertainty" / "plot_thermodynamic_softmax_fusion.py")]
+        )
+        stages_run.append(("3D Thermodynamic Softmax Fusion Surface", s10))
+
     # 5. Computational Cost Benchmark
     if args.all or args.benchmarks:
-        s10 = run_stage(
+        s11 = run_stage(
             "Computational Cost & Latency Benchmark",
             [py_exec, str(SRC_EXPERIMENTS / "benchmarks" / "benchmark_computational_cost.py"), "--models", "hrnet_w32", "resnet50", "vitpose_small", "--num-trials", "15"]
         )
-        stages_run.append(("Computational Cost Benchmark", s10))
+        stages_run.append(("Computational Cost Benchmark", s11))
 
     # Summary Report
     total_elapsed = time.perf_counter() - overall_start
