@@ -164,13 +164,27 @@ def main() -> None:
         )
         stages_run.append(("Uniform Weight Boxplot", s7))
 
+        # Baseline Precision vs Ours Across Degradations
+        s8 = run_stage(
+            "Phase I Baseline Precision vs Ours Degradation Plot",
+            [py_exec, str(SRC_EXPERIMENTS / "uncertainty" / "plot_baseline_degradation_precision.py")]
+        )
+        stages_run.append(("Baseline Precision Degradation Plot", s8))
+
+        # OoD AUROC Evolution Across Degradations
+        s9 = run_stage(
+            "OoD AUROC Degradation Evolution 1x3 Plots",
+            [py_exec, str(SRC_EXPERIMENTS / "uncertainty" / "plot_ood_degradation_evolution.py"), "--models", "hrnet_w32", "resnet50", "vitpose_small"]
+        )
+        stages_run.append(("OoD AUROC Degradation Evolution Plots", s9))
+
     # 5. Computational Cost Benchmark
     if args.all or args.benchmarks:
-        s8 = run_stage(
+        s10 = run_stage(
             "Computational Cost & Latency Benchmark",
             [py_exec, str(SRC_EXPERIMENTS / "benchmarks" / "benchmark_computational_cost.py"), "--models", "hrnet_w32", "resnet50", "vitpose_small", "--num-trials", "15"]
         )
-        stages_run.append(("Computational Cost Benchmark", s8))
+        stages_run.append(("Computational Cost Benchmark", s10))
 
     # Summary Report
     total_elapsed = time.perf_counter() - overall_start

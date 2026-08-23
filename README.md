@@ -254,7 +254,7 @@ robust-pose-tta/
 │   └── figures/                          # Vectorial PDFs and 300 DPI publication figures
 ├── scripts/                              # Scientific reproduction CLI suite
 │   ├── download_benchmark_data.py        # Automated benchmark parquet retriever & validator
-│   ├── package_benchmark_data.py         # Release packaging utility for Zenodo/GitHub Releases
+│   ├── package_benchmark_data.py         # Release packaging utility for GitHub Releases
 │   └── reproduce_all.py                  # Master One-Click reproduction CLI
 ├── src/                                  # Production library source code
 │   └── pose_uncertainty/
@@ -323,7 +323,7 @@ poetry run pytest src/tests --ignore=models/mmpose -v
 The repository includes a comprehensive, automated reproduction harness [`scripts/reproduce_all.py`](scripts/reproduce_all.py) to regenerate all publication figures, uncertainty calibration plots, and benchmarks:
 
 ```bash
-# 1. Download packaged benchmark results (~55 MB from Release/Zenodo)
+# 1. Download packaged benchmark results (~55 MB from Release)
 poetry run python scripts/download_benchmark_data.py
 
 # 2. Reproduce all 5 Qualitative Paper Figures + Methodology Diagram (~30s)
