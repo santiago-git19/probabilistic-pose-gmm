@@ -73,7 +73,7 @@ Despite advancements in sub-pixel decoding, modern Human Pose Estimation (HPE) a
 5. **The 2D Kinematic MRF Dilemma**:
    Demonstrates that while Markov Random Fields act as effective sub-pixel regularizers in canonical poses, rigid 2D Euclidean priors misinterpret *perspective foreshortening* as an anatomical violation, forcefully dragging foreshortened limbs across the image plane and causing strict swaps.
 6. **Breakthrough Uncertainty Quantification**:
-   The calibrated geometric Covariance Volume $\det(\mathbf{\Sigma}_{\text{final}})$ fundamentally outperforms heuristic confidence ($1 - P_{\text{DARK}}$) for Out-of-Distribution (OoD) anomaly detection under heavy occlusion (AUROC $0.94$ vs $0.38$ on CrowdPose $K=1$).
+   The calibrated geometric Covariance Volume $\det(\mathbf{\Sigma}_{\text{final}})$ fundamentally outperforms heuristic confidence $\left(1 - P_{\text{DARK}}\right)$ for Out-of-Distribution (OoD) anomaly detection under heavy occlusion (AUROC 0.94 vs 0.38 on CrowdPose $K=1$).
 7. **Universal In-Distribution Calibration via Adaptive Softmax**:
    Continuously fuses heuristic baseline confidence with geometric covariance volume, systematically matching or enhancing Area Under the Sparsification Error (AUSE) across all datasets and degradations.
 8. **$\mathcal{O}(N^3)$ Memory Curse Bypass for Multi-View 3D**:
@@ -87,43 +87,85 @@ Despite advancements in sub-pixel decoding, modern Human Pose Estimation (HPE) a
 
 ### 1. Stochastic Test-Time Augmentation (GPU)
 Given an input frame $\mathbf{I}$, stochastic test-time transformations generate multi-scale representations across scales $s \in \{0.85, 0.925, 1.00, 1.075, 1.15\}$ and horizontal reflections:
-$$\tilde{\mathbf{I}}^{(n)} = \mathcal{T}^{(n)}(\mathbf{I}), \quad \tilde{\mathbf{H}}_k^{(n)} = \Phi(\tilde{\mathbf{I}}^{(n)})$$
+
+$$
+\tilde{\mathbf{I}}^{(n)} = \mathcal{T}^{(n)}(\mathbf{I}), \quad \tilde{\mathbf{H}}_k^{(n)} = \Phi(\tilde{\mathbf{I}}^{(n)})
+$$
+
 where $\Phi$ denotes a frozen backbone (HRNet-W32, ViTPose-Small, ResNet-50) and $\tilde{\mathbf{H}}_k^{(n)}$ represents the raw activation tensor for joint $k$.
 
 ### 2. Continuous Spatial Aggregation & Monte Carlo Sampling (CPU)
 Raw heatmaps are normalized into valid probability distributions $\hat{\mathbf{H}}_k^{(n)}$ and mapped back to the canonical reference frame via exact inverse affine transforms. To prevent **heatmap poisoning** from uninformative out-of-field crops, representations are combined using continuous sharpness weighting:
-$$\mathbf{P}_k(\mathbf{x}) = \sum_{n=1}^N w_k^{(n)} \tilde{\mathbf{H}}_k^{(n)}(\mathbf{x}), \quad w_k^{(n)} = \frac{\mathcal{C}_k^{(n)}}{\sum_m \mathcal{C}_k^{(m)}}$$
+
+$$
+\mathbf{P}_k(\mathbf{x}) = \sum_{n=1}^N w_k^{(n)} \tilde{\mathbf{H}}_k^{(n)}(\mathbf{x}), \quad w_k^{(n)} = \frac{\mathcal{C}_k^{(n)}}{\sum_m \mathcal{C}_k^{(m)}}
+$$
+
 where structural confidence $\mathcal{C}_k^{(n)}$ is parameterized by maximum activation $\rho_k^{(n)} = \max(\hat{\mathbf{H}}_k^{(n)})$ and expected mean $\mu_k^{(n)} = \mathbb{E}[\hat{\mathbf{H}}_k^{(n)}]$:
-$$\mathcal{C}_k^{(n)} = \left(\rho_k^{(n)}\right)^\alpha \cdot \left[1 - \frac{1}{1 + \frac{\rho_k^{(n)} / (\mu_k^{(n)} + \epsilon)}{\tau}}\right]^\beta$$
+
+$$
+\mathcal{C}_k^{(n)} = \left(\rho_k^{(n)}\right)^\alpha \cdot \left[1 - \frac{1}{1 + \frac{\rho_k^{(n)} / (\mu_k^{(n)} + \epsilon)}{\tau}}\right]^\beta
+$$
 
 Unbiased spatial coordinates are extracted using temperature-sharpened ($T=0.3$) Von Neumann Rejection Sampling ($N=1000$). Continuous support over $\mathbb{R}^2$ is recovered via uniform sub-pixel dequantization:
-$$\tilde{\mathbf{x}}_m = \mathbf{x}_m + \boldsymbol{\epsilon}, \quad \boldsymbol{\epsilon} \sim \mathcal{U}(-0.5, 0.5), \quad m = 1, \dots, M$$
+
+$$
+\tilde{\mathbf{x}}_m = \mathbf{x}_m + \boldsymbol{\epsilon}, \quad \boldsymbol{\epsilon} \sim \mathcal{U}(-0.5, 0.5), \quad m = 1, \dots, M
+$$
+
 The additive variance $\frac{1}{12}\mathbf{I} \approx 0.0833\mathbf{I}$ is deliberately retained as a physically grounded lower-bound for $1\times1$ pixel quantization uncertainty.
 
 ### 3. Robust Gaussian Mixture Modeling & BIC Selection (CPU)
 Spatial samples are fitted using a generalized Expectation-Maximization (EM) algorithm with dynamic spectral Tikhonov regularization $\tilde{\mathbf{\Sigma}}_c = \mathbf{\Sigma}_c + (\lambda_{\text{reg}} - \min(0, \lambda_{\min}))\mathbf{I}$:
-$$p(\tilde{\mathbf{x}} \mid \mathbf{\Theta}) = \sum_{c=1}^K \pi_c \mathcal{N}(\tilde{\mathbf{x}} \mid \boldsymbol{\mu}_c, \mathbf{\Sigma}_c) + \pi_u \mathcal{U}(\tilde{\mathbf{x}} \mid \mathcal{A})$$
+
+$$
+p(\tilde{\mathbf{x}} \mid \mathbf{\Theta}) = \sum_{c=1}^K \pi_c \mathcal{N}(\tilde{\mathbf{x}} \mid \boldsymbol{\mu}_c, \mathbf{\Sigma}_c) + \pi_u \mathcal{U}(\tilde{\mathbf{x}} \mid \mathcal{A})
+$$
+
 The optimal cardinality ($K=1$ unimodal vs. $K=2$ bimodal) is determined via the Bayesian Information Criterion:
-$$\mathrm{BIC} = p \ln(M) - 2\mathcal{L}$$
+
+$$
+\mathrm{BIC} = p \ln(M) - 2\mathcal{L}
+$$
+
 When $\mathrm{BIC}_2 < \mathrm{BIC}_1$, the system flags a bimodal topological ambiguity and preserves both spatial hypotheses.
 
 ### 4. Kinematic Tree MRF Decoding & Anatomical Priors (CPU)
 The human skeleton is modeled as a tree graph $\mathcal{G} = (\mathcal{V}, \mathcal{E})$ rooted at the facial axis. Unimodal keypoints ($K=1$) act as invariant structural anchors ($\Delta\mathrm{OKS}=0$), while bimodal candidates ($K=2$) are decoded via exact Max-Product Belief Propagation:
-$$\mathbf{x}^* = \arg\min_{\mathbf{x}} \sum_{u \in \mathcal{V}} \phi_u(x_u) + \sum_{(u, v) \in \mathcal{E}} \psi_{uv}(x_u, x_v)$$
+
+$$
+\mathbf{x}^* = \arg\min_{\mathbf{x}} \sum_{u \in \mathcal{V}} \phi_u(x_u) + \sum_{(u, v) \in \mathcal{E}} \psi_{uv}(x_u, x_v)
+$$
+
 - **Unary Cost**: $\phi_u(x_u) = -\ln \mathbf{P}_u(x_u)$
 - **Kinematic Pairwise Prior**:
-  $$\psi_{uv}(x_u, x_v) = \frac{(\|\mathbf{x}_u - \mathbf{x}_v\| - \mu_{uv}^{\text{bone}}\sqrt{A_{\text{box}}})^2}{2(\sigma_{uv}^{\text{bone}} \cdot \sigma_{\text{mult}}\sqrt{A_{\text{box}}})^2}$$
+
+$$
+\psi_{uv}(x_u, x_v) = \frac{(\|\mathbf{x}_u - \mathbf{x}_v\| - \mu_{uv}^{\text{bone}}\sqrt{A_{\text{box}}})^2}{2(\sigma_{uv}^{\text{bone}} \cdot \sigma_{\text{mult}}\sqrt{A_{\text{box}}})^2}
+$$
+
 where $\mu_{uv}^{\text{bone}}$ and $\sigma_{uv}^{\text{bone}}$ are empirically calibrated on COCO training statistics, with $\sigma_{\text{mult}}=2.0$ to account for natural 2D projection tolerance.
 
 ### 5. Heteroscedastic Uncertainty Quantification & Adaptive Softmax Fusion
 Applying the Law of Total Variance across Gaussian mixing weights $\tilde{\pi}_k = \pi_k / \sum_{j=1}^K \pi_j$:
-$$\mathbf{\Sigma}_{\text{total}} = \sum_{k=1}^K \tilde{\pi}_k \left( \mathbf{\Sigma}_k + (\boldsymbol{\mu}_k - \boldsymbol{\mu}_{\text{global}})(\boldsymbol{\mu}_k - \boldsymbol{\mu}_{\text{global}})^T \right), \quad \mathbf{\Sigma}_{\text{final}} = \frac{1}{(s \cdot \kappa_j)^2} \mathbf{\Sigma}_{\text{total}} + \epsilon\mathbf{I}$$
+
+$$
+\mathbf{\Sigma}_{\text{total}} = \sum_{k=1}^K \tilde{\pi}_k \left( \mathbf{\Sigma}_k + (\boldsymbol{\mu}_k - \boldsymbol{\mu}_{\text{global}})(\boldsymbol{\mu}_k - \boldsymbol{\mu}_{\text{global}})^T \right), \quad \mathbf{\Sigma}_{\text{final}} = \frac{1}{(s \cdot \kappa_j)^2} \mathbf{\Sigma}_{\text{total}} + \epsilon\mathbf{I}
+$$
+
 where $s^2$ is the bounding box area and $\kappa_j$ is the COCO per-joint standard deviation constant.
 
 The scalar spatial metric is bounded via exponential projection:
-$$U_{\text{gmm}} = 1 - \exp(-\beta \cdot \det(\mathbf{\Sigma}_{\text{final}}))$$
-and fused with baseline heuristic uncertainty $U_{\text{base}} = 1 - P_{\text{DARK}}$ via **Adaptive Softmax Fusion**:
-$$U_{\text{adapt}} = \frac{\exp(U_{\text{base}}) \cdot U_{\text{base}} + \exp(U_{\text{gmm}}) \cdot U_{\text{gmm}}}{\exp(U_{\text{base}}) + \exp(U_{\text{gmm}})}$$
+
+$$
+U_{\text{gmm}} = 1 - \exp(-\beta \cdot \det(\mathbf{\Sigma}_{\text{final}}))
+$$
+
+and fused with baseline heuristic uncertainty $U_{\text{base}} = \left(1 - P_{\text{DARK}}\right)$ via **Adaptive Softmax Fusion**:
+
+$$
+U_{\text{adapt}} = \frac{\exp(U_{\text{base}}) \cdot U_{\text{base}} + \exp(U_{\text{gmm}}) \cdot U_{\text{gmm}}}{\exp(U_{\text{base}}) + \exp(U_{\text{gmm}})}
+$$
 
 ---
 
@@ -131,13 +173,13 @@ $$U_{\text{adapt}} = \frac{\exp(U_{\text{base}}) \cdot U_{\text{base}} + \exp(U_
 
 ### Ablation 1: Baseline Precision Parity (DARK vs. GMM Expectation)
 
-Evaluated on clean images ($256 \times 192$) across 500 instances per benchmark:
+Evaluated on clean images (256 × 192) across 500 instances per benchmark:
 
-| Dataset | Metric | DARK (Taylor Argmax) | Ours (Solitary GMM Expectation) | $\Delta$ Difference |
+| Dataset | Metric | DARK (Taylor Argmax) | Ours (Solitary GMM Expectation) | Δ Difference |
 | :--- | :--- | :---: | :---: | :---: |
-| **COCO val2017** | OKS | **0.7079** | 0.7077 | $-0.0002$ |
-| **CrowdPose** | OKS | **0.8278** | 0.8270 | $-0.0008$ |
-| **OCHuman** | OKS | **0.6281** | 0.6280 | $-0.0001$ |
+| **COCO val2017** | OKS | **0.7079** | 0.7077 | −0.0002 |
+| **CrowdPose** | OKS | **0.8278** | 0.8270 | −0.0008 |
+| **OCHuman** | OKS | **0.6281** | 0.6280 | −0.0001 |
 
 > **Conclusion**: The continuous GMM mathematical expectation achieves strict geometric parity with state-of-the-art Taylor expansion decoders while unlocking continuous spatial covariance parameters.
 
@@ -149,21 +191,21 @@ Comprehensive performance across all five resolution degradation tiers (Clean, L
 
 | Dataset | Degradation Tier | OKS (DARK) | OKS (Ours GMM) | Loose Swaps (DARK) | Loose Swaps (Ours GMM) | Strict Swaps (DARK) | Strict Swaps (Ours GMM) |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **COCO** | Baseline (Clean) | **0.7137** | 0.7129 | 98 | **97** ($\mathbf{-1}$) | 18 | 18 ($0$) |
-| | Resize Low ($0.50\times$) | **0.6912** | 0.6907 | 116 | **113** ($\mathbf{-3}$) | 26 | 26 ($0$) |
-| | Resize Medium ($0.25\times$) | **0.6082** | 0.6076 | 215 | **214** ($\mathbf{-1}$) | **66** | 67 ($+1$) |
-| | Resize High ($0.125\times$) | **0.4485** | 0.4465 | 404 | **388** ($\mathbf{-16}$) | **135** | 138 ($+3$) |
-| | Resize Extreme ($0.062\times$) | **0.2505** | 0.2494 | 438 | **437** ($\mathbf{-1}$) | 139 | 139 ($0$) |
-| **CrowdPose** | Baseline (Clean) | **0.8361** | 0.8355 | **150** | 151 ($+1$) | 38 | **36** ($\mathbf{-2}$) |
-| | Resize Low ($0.50\times$) | **0.8312** | 0.8302 | 155 | **153** ($\mathbf{-2}$) | **36** | 38 ($+2$) |
-| | Resize Medium ($0.25\times$) | **0.7956** | 0.7954 | 198 | **191** ($\mathbf{-7}$) | **53** | 54 ($+1$) |
-| | Resize High ($0.125\times$) | **0.6761** | 0.6755 | 336 | **329** ($\mathbf{-7}$) | **102** | 103 ($+1$) |
-| | Resize Extreme ($0.062\times$) | **0.4389** | 0.4383 | **497** | 498 ($+1$) | **169** | 171 ($+2$) |
-| **OCHuman** | Baseline (Clean) | 0.6356 | 0.6356 | 441 | **437** ($\mathbf{-4}$) | 135 | **132** ($\mathbf{-3}$) |
-| | Resize Low ($0.50\times$) | **0.6305** | 0.6299 | 443 | **442** ($\mathbf{-1}$) | **127** | 131 ($+4$) |
-| | Resize Medium ($0.25\times$) | 0.6100 | **0.6106** ($\mathbf{+0.0006}$) | 467 | **458** ($\mathbf{-9}$) | **126** | 128 ($+2$) |
-| | Resize High ($0.125\times$) | **0.5342** | 0.5337 | 544 | **540** ($\mathbf{-4}$) | 139 | **138** ($\mathbf{-1}$) |
-| | Resize Extreme ($0.062\times$) | 0.3574 | **0.3578** ($\mathbf{+0.0005}$) | 738 | **720** ($\mathbf{-18}$) | 257 | **249** ($\mathbf{-8}$) |
+| **COCO** | Baseline (Clean) | **0.7137** | 0.7129 | 98 | **97** (**−1**) | 18 | 18 (0) |
+| | Resize Low (0.50×) | **0.6912** | 0.6907 | 116 | **113** (**−3**) | 26 | 26 (0) |
+| | Resize Medium (0.25×) | **0.6082** | 0.6076 | 215 | **214** (**−1**) | **66** | 67 (+1) |
+| | Resize High (0.125×) | **0.4485** | 0.4465 | 404 | **388** (**−16**) | **135** | 138 (+3) |
+| | Resize Extreme (0.062×) | **0.2505** | 0.2494 | 438 | **437** (**−1**) | 139 | 139 (0) |
+| **CrowdPose** | Baseline (Clean) | **0.8361** | 0.8355 | **150** | 151 (+1) | 38 | **36** (**−2**) |
+| | Resize Low (0.50×) | **0.8312** | 0.8302 | 155 | **153** (**−2**) | **36** | 38 (+2) |
+| | Resize Medium (0.25×) | **0.7956** | 0.7954 | 198 | **191** (**−7**) | **53** | 54 (+1) |
+| | Resize High (0.125×) | **0.6761** | 0.6755 | 336 | **329** (**−7**) | **102** | 103 (+1) |
+| | Resize Extreme (0.062×) | **0.4389** | 0.4383 | **497** | 498 (+1) | **169** | 171 (+2) |
+| **OCHuman** | Baseline (Clean) | 0.6356 | 0.6356 | 441 | **437** (**−4**) | 135 | **132** (**−3**) |
+| | Resize Low (0.50×) | **0.6305** | 0.6299 | 443 | **442** (**−1**) | **127** | 131 (+4) |
+| | Resize Medium (0.25×) | 0.6100 | **0.6106** (**+0.0006**) | 467 | **458** (**−9**) | **126** | 128 (+2) |
+| | Resize High (0.125×) | **0.5342** | 0.5337 | 544 | **540** (**−4**) | 139 | **138** (**−1**) |
+| | Resize Extreme (0.062×) | 0.3574 | **0.3578** (**+0.0005**) | 738 | **720** (**−18**) | 257 | **249** (**−8**) |
 
 ---
 
@@ -171,47 +213,47 @@ Comprehensive performance across all five resolution degradation tiers (Clean, L
 
 Evaluating the selective activation of the kinematic tree across 85,255 keypoints:
 
-| Dataset | Degradation Tier | Unimodal Anchors Ratio ($K=1$) | $\Delta_{\text{MRF}}$ ($K=1$) | Ambiguous Nodes Ratio ($K=2$) | $\Delta_{\text{MRF}}$ Gain ($K=2$) |
+| Dataset | Degradation Tier | Unimodal Anchors Ratio (K = 1) | Δ_MRF (K = 1) | Ambiguous Nodes Ratio (K = 2) | Δ_MRF Gain (K = 2) |
 | :--- | :--- | :---: | :---: | :---: | :---: |
-| **COCO** | Clean | 95.1% | $0.0000$ | 4.9% | $\mathbf{+0.0254\ (+2.54\%)}$ |
-| | Resize High | 67.1% | $0.0000$ | 32.9% | $\mathbf{+0.0060\ (+0.60\%)}$ |
-| | Resize Extreme | 40.6% | $0.0000$ | 59.4% | $\mathbf{+0.0056\ (+0.56\%)}$ |
-| **CrowdPose** | Clean | 91.0% | $0.0000$ | 9.0% | $-0.0009\ (-0.09\%)$ |
-| | Resize Medium | 87.5% | $0.0000$ | 12.4% | $\mathbf{+0.0140\ (+1.40\%)}$ |
-| | Resize Extreme | 53.1% | $0.0000$ | 46.9% | $\mathbf{+0.0045\ (+0.45\%)}$ |
-| **OCHuman** | Clean | 72.7% | $0.0000$ | 27.3% | $-0.0032\ (-0.32\%)$ |
-| | Resize Low | 72.7% | $0.0000$ | 27.3% | $\mathbf{+0.0069\ (+0.69\%)}$ |
-| | Resize Extreme | 59.3% | $0.0000$ | 40.7% | $\mathbf{+0.0007\ (+0.07\%)}$ |
-| **Pooled Total** | **All 85,255 Keypoints** | **74.7%** | $\mathbf{0.0000}$ | **25.3%** | $\mathbf{+0.0040\ (+0.40\%)}$ |
+| **COCO** | Clean | 95.1% | 0.0000 | 4.9% | **+0.0254 (+2.54%)** |
+| | Resize High | 67.1% | 0.0000 | 32.9% | **+0.0060 (+0.60%)** |
+| | Resize Extreme | 40.6% | 0.0000 | 59.4% | **+0.0056 (+0.56%)** |
+| **CrowdPose** | Clean | 91.0% | 0.0000 | 9.0% | −0.0009 (−0.09%) |
+| | Resize Medium | 87.5% | 0.0000 | 12.4% | **+0.0140 (+1.40%)** |
+| | Resize Extreme | 53.1% | 0.0000 | 46.9% | **+0.0045 (+0.45%)** |
+| **OCHuman** | Clean | 72.7% | 0.0000 | 27.3% | −0.0032 (−0.32%) |
+| | Resize Low | 72.7% | 0.0000 | 27.3% | **+0.0069 (+0.69%)** |
+| | Resize Extreme | 59.3% | 0.0000 | 40.7% | **+0.0007 (+0.07%)** |
+| **Pooled Total** | **All 85,255 Keypoints** | **74.7%** | **0.0000** | **25.3%** | **+0.0040 (+0.40%)** |
 
 ---
 
 ### Ablation 4: In-Distribution Calibration & Out-of-Distribution Anomaly Detection
 
-#### Global Sparsification Error (AUSE $\downarrow$):
+#### Global Sparsification Error (AUSE ↓):
 
-| Dataset | Evaluation Regime | DARK ($1 - P_{\text{DARK}}$) | DARK (Entropy) | Ours ($\det(\mathbf{\Sigma}_{\text{final}})$) |
+| Dataset | Evaluation Regime | DARK (1 − P_DARK) | DARK (Entropy) | Ours det(Σ) |
 | :--- | :--- | :---: | :---: | :---: |
 | **COCO** | Global | **0.0581** | 0.1437 | 0.0945 |
 | | Occluded Joints | **0.1026** | 0.2037 | 0.1322 |
 | **CrowdPose** | Global | **0.0515** | 0.1591 | 0.0911 |
 | | Occluded Joints | **0.0599** | 0.1845 | 0.1067 |
 | **OCHuman** | Global | **0.1573** | 0.2373 | 0.2143 |
-| | **Occluded Joints** | 0.2636 | 0.3130 | $\mathbf{0.2203}$ |
-| | **Resize Extreme ($0.062\times$)** | 0.2165 | — | $\mathbf{0.2024}$ |
+| | **Occluded Joints** | 0.2636 | 0.3130 | **0.2203** |
+| | **Resize Extreme (0.062×)** | 0.2165 | — | **0.2024** |
 
-#### Out-of-Distribution (OoD) Anomaly Detection (AUROC $\uparrow$):
+#### Out-of-Distribution (OoD) Anomaly Detection (AUROC ↑):
 
-| Evaluation Condition | DARK ($1 - P_{\text{DARK}}$) | Ours ($\det(\mathbf{\Sigma}_{\text{final}})$) | Performance Gain |
+| Evaluation Condition | DARK (1 − P_DARK) | Ours det(Σ) | Performance Gain |
 | :--- | :---: | :---: | :---: |
-| **CrowdPose ($K=1$ Unimodal Occlusions)** | 0.3800 | $\mathbf{0.9400}$ | $\mathbf{+0.5600\ (+147.4\%)}$ |
-| **OCHuman ($K=1$ Heavy Occlusion)** | 0.4210 | $\mathbf{0.8920}$ | $\mathbf{+0.4710\ (+111.9\%)}$ |
+| **CrowdPose (K = 1 Unimodal Occlusions)** | 0.3800 | **0.9400** | **+0.5600 (+147.4%)** |
+| **OCHuman (K = 1 Heavy Occlusion)** | 0.4210 | **0.8920** | **+0.4710 (+111.9%)** |
 
 ---
 
 ### Ablation 5: Multi-Backbone Validation & Latency Profiling
 
-Evaluated across architectures on COCO val2017 ($256 \times 192$):
+Evaluated across architectures on COCO val2017 (256 × 192):
 
 | Backbone Architecture | Codec | Forward GPU (ms) | Continuous TTA (ms) | EM + BIC CPU (ms) | MRF Tree (ms) | Peak VRAM |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: |
@@ -219,7 +261,7 @@ Evaluated across architectures on COCO val2017 ($256 \times 192$):
 | **ResNet-50** | DARK | 12.1 ms | 3.2 ms | 1311.7 ms | 1.58 ms | 118 MB |
 | **ViTPose-Small** | UDP | 24.6 ms | 3.6 ms | 1391.6 ms | 1.62 ms | 265 MB |
 
-> **Computational Note**: Crucially, this latency bottleneck is localized strictly in the iterative mixture fitting rather than in graph kinematics or memory transfers. Because Monte Carlo sampling and GMM clustering are strictly independent across the 17 anatomical joints, the post-processing module is embarrassingly parallelizable; implementing the EM algorithm as native batch-tensor GPU operations would substantially reduce post-processing latency by evaluating all keypoints concurrently, providing an immediate pathway toward interactive frame rates. Furthermore, the memory footprint remains exceptionally modest ($118 - 265\ \text{MB}$ peak VRAM across all backbones), confirming that continuous uncertainty extraction does not impose GPU memory bottlenecks.
+> **Computational Note**: Crucially, this latency bottleneck is localized strictly in the iterative mixture fitting rather than in graph kinematics or memory transfers. Because Monte Carlo sampling and GMM clustering are strictly independent across the 17 anatomical joints, the post-processing module is embarrassingly parallelizable; implementing the EM algorithm as native batch-tensor GPU operations would substantially reduce post-processing latency by evaluating all keypoints concurrently, providing an immediate pathway toward interactive frame rates. Furthermore, the memory footprint remains exceptionally modest (118–265 MB peak VRAM across all backbones), confirming that continuous uncertainty extraction does not impose GPU memory bottlenecks.
 
 ---
 
@@ -229,11 +271,11 @@ The repository provides automated generation for all 5 publication-grade qualita
 
 | Figure | Topic | Sample ID & Keypoint | Primary Empirical Finding |
 | :--- | :--- | :---: | :--- |
-| **Figure 1** | **Topological Swap Disambiguation** | Image 460 (`L_Ankle`, kp 15) | DARK snaps to the wrong mode ($w_2=0.43$), while GMM retains both spatial hypotheses ($w_1=0.56$). |
+| **Figure 1** | **Topological Swap Disambiguation** | Image 460 (`L_Ankle`, kp 15) | DARK snaps to the wrong mode (w₂ = 0.43), while GMM retains both spatial hypotheses (w₁ = 0.56). |
 | **Figure 2** | **The Kinematic MRF Dilemma** | Win 130 (`R_Ankle`) vs. Fail 116555 (`L_Ankle`) | Demonstrates constructive pull in canonical poses vs. destructive foreshortening drag in 2D perspective. |
-| **Figure 3** | **OoD Volumetric Uncertainty Alert** | Image 108525 (`L_Eye`, kp 1) | Baseline overconfidently predicts occluded eye ($P=0.88$), while $\det(\mathbf{\Sigma})$ triggers a massive alert. |
+| **Figure 3** | **OoD Volumetric Uncertainty Alert** | Image 108525 (`L_Eye`, kp 1) | Baseline overconfidently predicts occluded eye (P = 0.88), while det(Σ) triggers a massive alert. |
 | **Figure 4** | **Heatmap Poisoning Mitigation** | Image 251 (`L_Knee`, kp 13) | Standard arithmetic averaging drops OKS to 0.69; continuous sharpness weighting restores OKS to 0.82. |
-| **Figure 5** | **Uniform Noise Absorption ($\pi_u$)** | Image 482 (`L_Ankle`, kp 15) | Under extreme degradation, $\pi_u$ absorbs $14.51\%$ noise mass, preserving Gaussian covariance geometry. |
+| **Figure 5** | **Uniform Noise Absorption (π_u)** | Image 482 (`L_Ankle`, kp 15) | Under extreme degradation, π_u absorbs 14.51% noise mass, preserving Gaussian covariance geometry. |
 
 ---
 
@@ -342,7 +384,7 @@ poetry run python scripts/reproduce_all.py --all
 | :--- | :--- |
 | `--all` | Complete end-to-end reproduction: verifies benchmark data, generates all 6 paper figures, produces all uncertainty calibration plots, and executes the test suite. |
 | `--figures` | Generates the **Methodology Pipeline Overview** (`methodology_pipeline_overview.pdf/png`) and all **5 Qualitative Publication Figures** in `outputs/figures/visualizations/`. |
-| `--uncertainty` | Generates all quantitative calibration figures: **ECE 3×3 Matrices**, **OoD KDE Distributions**, **$\beta$ Parameter Optimization Curves**, and **Uniform Noise Boxplots** in `outputs/figures/uncertainty/`. |
+| `--uncertainty` | Generates all quantitative calibration figures: **ECE 3×3 Matrices**, **OoD KDE Distributions**, **β Parameter Optimization Curves**, and **Uniform Noise Boxplots** in `outputs/figures/uncertainty/`. |
 | `--data` | Downloads and verifies the integrity of all 27 precomputed benchmark evaluation parquets in `outputs/data/`. |
 | `--tests` | Runs the full 233 unit and integration PyTest test suite (`src/tests`). |
 
@@ -482,7 +524,7 @@ The repository provides **17 interactive Jupyter notebooks** covering the comple
 | [`07_test_model_adapters.ipynb`](notebooks/07_test_model_adapters.ipynb) | Framework-agnostic adapter layer validation and interface contracts. |
 | [`08_demo_sampling.ipynb`](notebooks/08_demo_sampling.ipynb) | Stochastic Monte Carlo sampling strategies and temperature scaling analysis. |
 | [`09_demo_em_flow.ipynb`](notebooks/09_demo_em_flow.ipynb) | Robust EM algorithm from scratch with uniform component outlier absorption. |
-| [`10_complete_pipeline.ipynb`](notebooks/10_complete_pipeline.ipynb) | End-to-end integration: Ingestion $\to$ Sampling $\to$ GMM $\to$ Sub-pixel pose. |
+| [`10_complete_pipeline.ipynb`](notebooks/10_complete_pipeline.ipynb) | End-to-end integration: Ingestion → Sampling → GMM → Sub-pixel pose. |
 | [`11_test_heatmap_decode.ipynb`](notebooks/11_test_heatmap_decode.ipynb) | Mathematical consistency between direct argmax and heatmap decoding. |
 | [`12_validate_coord_transformation.ipynb`](notebooks/12_validate_coord_transformation.ipynb) | Exact inverse affine coordinate mapping between heatmap and image space. |
 | [`13_debug_fiftyone_visual.ipynb`](notebooks/13_debug_fiftyone_visual.ipynb) | Visual debugging workflow and interactive FiftyOne session launch. |
@@ -498,7 +540,7 @@ The repository provides **17 interactive Jupyter notebooks** covering the comple
 ## 🔮 Limitations & Multi-View 3D Extensibility
 
 ### Limitations
-1. **CPU Iterative Mixture Latency**: While the single-threaded CPU implementation of the EM loop currently limits throughput to $0.5 - 0.7\ \text{FPS}$, batch-tensor GPU parallelization across all 17 joints provides an immediate pathway to substantially enhance overall throughput toward interactive frame rates.
+1. **CPU Iterative Mixture Latency**: While the single-threaded CPU implementation of the EM loop currently limits throughput to 0.5–0.7 FPS, batch-tensor GPU parallelization across all 17 joints provides an immediate pathway to substantially enhance overall throughput toward interactive frame rates.
 2. **2D Perspective Foreshortening**: 2D Euclidean bone priors cannot distinguish between anatomical deformation and depth foreshortening along the optical axis.
 
 ### Multi-View 3D Extensibility
