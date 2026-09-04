@@ -26,7 +26,7 @@
   - [Ablation 2: Continuous Stochastic TTA vs. Discrete TTA](#ablation-2-continuous-stochastic-tta-vs-discrete-tta)
   - [Ablation 3: Decoupled Kinematic MRF Prior Breakdown (85,255 Keypoints)](#ablation-3-decoupled-kinematic-mrf-prior-breakdown-85255-keypoints)
   - [Ablation 4: In-Distribution Calibration & Out-of-Distribution Anomaly Detection](#ablation-4-in-distribution-calibration--out-of-distribution-anomaly-detection)
-  - [Ablation 5: Adaptive Uncertainty Fusion with Universal Sweet Spot ($\beta = 0.1$)](#ablation-5-adaptive-uncertainty-fusion-with-universal-sweet-spot-\beta--01)
+  - [Ablation 5: Adaptive Uncertainty Fusion with Universal Sweet Spot (β = 0.1)](#ablation-5-adaptive-uncertainty-fusion-with-universal-sweet-spot-β--01)
   - [Ablation 6: Multi-Backbone Validation & Latency Profiling](#ablation-6-multi-backbone-validation--latency-profiling)
 - [Qualitative Diagnostic Suite (Publication Figures 1–5)](#-qualitative-diagnostic-suite-publication-figures-15)
 - [Repository Structure & Clean Architecture](#-repository-structure--clean-architecture)
@@ -341,7 +341,7 @@ Evaluating the selective activation of the kinematic tree across 85,255 keypoint
 
 ---
 
-### Ablation 5: Adaptive Uncertainty Fusion with Universal Sweet Spot ($\beta = 0.1$)
+### Ablation 5: Adaptive Uncertainty Fusion with Universal Sweet Spot (β = 0.1)
 
 Global Sparsification Error (AUSE ↓) using a static, parameter-free sensitivity $\beta = 0.1$:
 
@@ -689,4 +689,30 @@ If you use this codebase or methodology in your research, please cite:
 
 This project is licensed under an **Academic and Non-Commercial Research License** with mandatory citation requirement - see the [LICENSE](LICENSE) file for details.
 
-Developed at the **Department of Computer Languages and Computer Science, University of Málaga**. Built upon open-source foundations from [PyTorch](https://pytorch.org/), [MMPose](https://github.com/open-mmlab/mmpose), [Hydra](https://hydra.cc/), and [FiftyOne](https://voxel51.com/fiftyone/).
+Developed at the **Department of Computer Languages and Computer Science, University of Málaga**.
+
+### Third-Party Software & Framework Attributions
+This codebase builds upon and interacts with several foundational open-source libraries:
+- **[MMPose](https://github.com/open-mmlab/mmpose)** ([Apache License 2.0](https://github.com/open-mmlab/mmpose/blob/main/LICENSE)): OpenMMLab Pose Estimation Toolbox and Benchmark.
+- **[PyTorch](https://pytorch.org/)** ([Modified BSD License](https://github.com/pytorch/pytorch/blob/main/LICENSE)): Deep learning tensor library.
+- **[FiftyOne](https://voxel51.com/fiftyone/)** ([Apache License 2.0](https://github.com/voxel51/fiftyone/blob/develop/LICENSE)): Visual dataset exploration and diagnostic tool.
+- **[Hydra](https://hydra.cc/)** ([MIT License](https://github.com/facebookresearch/hydra/blob/main/LICENSE)): Modular configuration management by Meta AI.
+- **[pycocotools](https://github.com/cocodataset/cocoapi)** ([BSD 2-Clause License](https://github.com/cocodataset/cocoapi/blob/master/license.txt)): Official COCO evaluation API.
+
+### Pretrained Backbone Weights & Codecs Attributions
+Pretrained backbone weights downloaded via `scripts/models_installation/download_manager.py` are provided through the OpenMMLab Model Zoo and are subject to the research licenses of their original publications:
+- **HRNet-W32**: Sun et al., *"Deep High-Resolution Representation Learning for Human Pose Estimation"*, CVPR 2019.
+- **DARK Sub-Pixel Codec**: Zhang et al., *"Distribution-Aware Coordinate Representation for Human Pose Estimation"*, CVPR 2020.
+- **UDP Codec**: Huang et al., *"The Devil is in the Details: Delving into Unbiased Data Processing for Human Pose Estimation"*, CVPR 2020.
+- **ViTPose-Small**: Xu et al., *"ViTPose: Simple Vision Transformer Baselines for Human Pose Estimation"*, NeurIPS 2022.
+- **ResNet-50**: He et al., *"Deep Residual Learning for Image Recognition"*, CVPR 2016.
+
+### Benchmark Datasets & Usage Terms
+Evaluations are conducted on academic benchmark datasets under non-commercial research terms:
+- **[COCO](https://cocodataset.org/)**: Lin et al., ECCV 2014. Images subject to Flickr Terms of Use; annotations licensed under [Creative Commons Attribution 4.0 International (CC BY 4.0)](https://creativecommons.org/licenses/by/4.0/).
+- **[CrowdPose](https://github.com/Jeff-sjtu/CrowdPose)**: Li et al., CVPR 2019. Used strictly for non-commercial research and educational benchmarking.
+- **[OCHuman](https://github.com/liruilong940607/OCHumanApi)**: Zhang et al., CVPR 2019. Used strictly for non-commercial academic research on occluded human pose estimation.
+
+> [!NOTE]
+> **Dataset & Model License Compliance**:
+> This repository strictly adheres to the non-commercial research use agreements mandated by the CrowdPose and OCHuman benchmark datasets, as well as the research terms of the pretrained model weights. Consequently, commercial exploitation of this repository or its benchmark artifacts is explicitly prohibited.
