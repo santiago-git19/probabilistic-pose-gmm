@@ -73,7 +73,7 @@ Despite advancements in sub-pixel decoding, modern Human Pose Estimation (HPE) a
 5. **The 2D Kinematic MRF Dilemma**:
    Demonstrates that while Markov Random Fields act as effective sub-pixel regularizers in canonical poses, rigid 2D Euclidean priors misinterpret *perspective foreshortening* as an anatomical violation, forcefully dragging foreshortened limbs across the image plane and causing strict swaps.
 6. **Breakthrough Uncertainty Quantification**:
-   The calibrated geometric Covariance Volume $\det(\mathbf{\Sigma}_{\text{final}})$ fundamentally outperforms heuristic confidence $\left(1 - P_{\text{DARK}}\right)$ for Out-of-Distribution (OoD) anomaly detection under heavy occlusion (AUROC 0.94 vs 0.38 on CrowdPose $K=1$).
+   The calibrated geometric Covariance Volume $\det(\mathbf{\Sigma}\_{\text{final}})$ fundamentally outperforms heuristic confidence $(1 - P\_{\text{DARK}})$ for Out-of-Distribution (OoD) anomaly detection under heavy occlusion (AUROC 0.94 vs 0.38 on CrowdPose $K=1$).
 7. **Universal In-Distribution Calibration via Adaptive Softmax**:
    Continuously fuses heuristic baseline confidence with geometric covariance volume, systematically matching or enhancing Area Under the Sparsification Error (AUSE) across all datasets and degradations.
 8. **$\mathcal{O}(N^3)$ Memory Curse Bypass for Multi-View 3D**:
@@ -92,16 +92,16 @@ $$
 \tilde{\mathbf{I}}^{(n)} = \mathcal{T}^{(n)}(\mathbf{I}), \quad \tilde{\mathbf{H}}_k^{(n)} = \Phi(\tilde{\mathbf{I}}^{(n)})
 $$
 
-where $\Phi$ denotes a frozen backbone (HRNet-W32, ViTPose-Small, ResNet-50) and $\tilde{\mathbf{H}}_k^{(n)}$ represents the raw activation tensor for joint $k$.
+where $\Phi$ denotes a frozen backbone (HRNet-W32, ViTPose-Small, ResNet-50) and $\tilde{\mathbf{H}}\_k^{(n)}$ represents the raw activation tensor for joint $k$.
 
 ### 2. Continuous Spatial Aggregation & Monte Carlo Sampling (CPU)
-Raw heatmaps are normalized into valid probability distributions $\hat{\mathbf{H}}_k^{(n)}$ and mapped back to the canonical reference frame via exact inverse affine transforms. To prevent **heatmap poisoning** from uninformative out-of-field crops, representations are combined using continuous sharpness weighting:
+Raw heatmaps are normalized into valid probability distributions $\hat{\mathbf{H}}\_k^{(n)}$ and mapped back to the canonical reference frame via exact inverse affine transforms. To prevent **heatmap poisoning** from uninformative out-of-field crops, representations are combined using continuous sharpness weighting:
 
 $$
 \mathbf{P}_k(\mathbf{x}) = \sum_{n=1}^N w_k^{(n)} \tilde{\mathbf{H}}_k^{(n)}(\mathbf{x}), \quad w_k^{(n)} = \frac{\mathcal{C}_k^{(n)}}{\sum_m \mathcal{C}_k^{(m)}}
 $$
 
-where structural confidence $\mathcal{C}_k^{(n)}$ is parameterized by maximum activation $\rho_k^{(n)} = \max(\hat{\mathbf{H}}_k^{(n)})$ and expected mean $\mu_k^{(n)} = \mathbb{E}[\hat{\mathbf{H}}_k^{(n)}]$:
+where structural confidence $\mathcal{C}\_k^{(n)}$ is parameterized by maximum activation $\rho\_k^{(n)} = \max(\hat{\mathbf{H}}\_k^{(n)})$ and expected mean $\mu\_k^{(n)} = \mathbb{E}[\hat{\mathbf{H}}\_k^{(n)}]$:
 
 $$
 \mathcal{C}_k^{(n)} = \left(\rho_k^{(n)}\right)^\alpha \cdot \left[1 - \frac{1}{1 + \frac{\rho_k^{(n)} / (\mu_k^{(n)} + \epsilon)}{\tau}}\right]^\beta
@@ -116,7 +116,11 @@ $$
 The additive variance $\frac{1}{12}\mathbf{I} \approx 0.0833\mathbf{I}$ is deliberately retained as a physically grounded lower-bound for $1\times1$ pixel quantization uncertainty.
 
 ### 3. Robust Gaussian Mixture Modeling & BIC Selection (CPU)
-Spatial samples are fitted using a generalized Expectation-Maximization (EM) algorithm with dynamic spectral Tikhonov regularization $\tilde{\mathbf{\Sigma}}_c = \mathbf{\Sigma}_c + (\lambda_{\text{reg}} - \min(0, \lambda_{\min}))\mathbf{I}$:
+Spatial samples are fitted using a generalized Expectation-Maximization (EM) algorithm with dynamic spectral Tikhonov regularization:
+
+$$
+\tilde{\mathbf{\Sigma}}_c = \mathbf{\Sigma}_c + (\lambda_{\text{reg}} - \min(0, \lambda_{\min}))\mathbf{I}
+$$
 
 $$
 p(\tilde{\mathbf{x}} \mid \mathbf{\Theta}) = \sum_{c=1}^K \pi_c \mathcal{N}(\tilde{\mathbf{x}} \mid \boldsymbol{\mu}_c, \mathbf{\Sigma}_c) + \pi_u \mathcal{U}(\tilde{\mathbf{x}} \mid \mathcal{A})
@@ -128,7 +132,7 @@ $$
 \mathrm{BIC} = p \ln(M) - 2\mathcal{L}
 $$
 
-When $\mathrm{BIC}_2 < \mathrm{BIC}_1$, the system flags a bimodal topological ambiguity and preserves both spatial hypotheses.
+When $\mathrm{BIC}\_2 < \mathrm{BIC}\_1$, the system flags a bimodal topological ambiguity and preserves both spatial hypotheses.
 
 ### 4. Kinematic Tree MRF Decoding & Anatomical Priors (CPU)
 The human skeleton is modeled as a tree graph $\mathcal{G} = (\mathcal{V}, \mathcal{E})$ rooted at the facial axis. Unimodal keypoints ($K=1$) act as invariant structural anchors ($\Delta\mathrm{OKS}=0$), while bimodal candidates ($K=2$) are decoded via exact Max-Product Belief Propagation:
@@ -137,23 +141,27 @@ $$
 \mathbf{x}^* = \arg\min_{\mathbf{x}} \sum_{u \in \mathcal{V}} \phi_u(x_u) + \sum_{(u, v) \in \mathcal{E}} \psi_{uv}(x_u, x_v)
 $$
 
-- **Unary Cost**: $\phi_u(x_u) = -\ln \mathbf{P}_u(x_u)$
+- **Unary Cost**: $\phi\_u(x\_u) = -\ln \mathbf{P}\_u(x\_u)$
 - **Kinematic Pairwise Prior**:
 
 $$
 \psi_{uv}(x_u, x_v) = \frac{(\|\mathbf{x}_u - \mathbf{x}_v\| - \mu_{uv}^{\text{bone}}\sqrt{A_{\text{box}}})^2}{2(\sigma_{uv}^{\text{bone}} \cdot \sigma_{\text{mult}}\sqrt{A_{\text{box}}})^2}
 $$
 
-where $\mu_{uv}^{\text{bone}}$ and $\sigma_{uv}^{\text{bone}}$ are empirically calibrated on COCO training statistics, with $\sigma_{\text{mult}}=2.0$ to account for natural 2D projection tolerance.
+where $\mu\_{uv}^{\text{bone}}$ and $\sigma\_{uv}^{\text{bone}}$ are empirically calibrated on COCO training statistics, with $\sigma\_{\text{mult}}=2.0$ to account for natural 2D projection tolerance.
 
 ### 5. Heteroscedastic Uncertainty Quantification & Adaptive Softmax Fusion
-Applying the Law of Total Variance across Gaussian mixing weights $\tilde{\pi}_k = \pi_k / \sum_{j=1}^K \pi_j$:
+Applying the Law of Total Variance across normalized Gaussian mixing weights:
+
+$$
+\tilde{\pi}_k = \frac{\pi_k}{\sum_{j=1}^K \pi_j}
+$$
 
 $$
 \mathbf{\Sigma}_{\text{total}} = \sum_{k=1}^K \tilde{\pi}_k \left( \mathbf{\Sigma}_k + (\boldsymbol{\mu}_k - \boldsymbol{\mu}_{\text{global}})(\boldsymbol{\mu}_k - \boldsymbol{\mu}_{\text{global}})^T \right), \quad \mathbf{\Sigma}_{\text{final}} = \frac{1}{(s \cdot \kappa_j)^2} \mathbf{\Sigma}_{\text{total}} + \epsilon\mathbf{I}
 $$
 
-where $s^2$ is the bounding box area and $\kappa_j$ is the COCO per-joint standard deviation constant.
+where $s^2$ is the bounding box area and $\kappa\_j$ is the COCO per-joint standard deviation constant.
 
 The scalar spatial metric is bounded via exponential projection:
 
@@ -161,7 +169,7 @@ $$
 U_{\text{gmm}} = 1 - \exp(-\beta \cdot \det(\mathbf{\Sigma}_{\text{final}}))
 $$
 
-and fused with baseline heuristic uncertainty $U_{\text{base}} = \left(1 - P_{\text{DARK}}\right)$ via **Adaptive Softmax Fusion**:
+and fused with baseline heuristic uncertainty $U\_{\text{base}} = (1 - P\_{\text{DARK}})$ via **Adaptive Softmax Fusion**:
 
 $$
 U_{\text{adapt}} = \frac{\exp(U_{\text{base}}) \cdot U_{\text{base}} + \exp(U_{\text{gmm}}) \cdot U_{\text{gmm}}}{\exp(U_{\text{base}}) + \exp(U_{\text{gmm}})}
