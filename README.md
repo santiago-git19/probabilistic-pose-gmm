@@ -518,7 +518,7 @@ If you use this codebase or methodology in your research, please cite:
   author       = {Reina-Alguacil, Santiago and L{\'o}pez-Rubio, Ezequiel},
   year         = {2026},
   howpublished = {\url{https://github.com/santiago-git19/probabilistic-pose-gmm}},
-  note         = {University of M{\'a}laga. Preprint}
+  note         = {Department of Computer Languages and Computer Science, University of M{\'a}laga. Preprint}
 }
 ```
 
@@ -528,4 +528,4 @@ If you use this codebase or methodology in your research, please cite:
 
 This project is licensed under an **Academic and Non-Commercial Research License** with mandatory citation requirement - see the [LICENSE](LICENSE) file for details.
 
-Developed at the **University of Málaga**. Built upon open-source foundations from [PyTorch](https://pytorch.org/), [MMPose](https://github.com/open-mmlab/mmpose), [Hydra](https://hydra.cc/), and [FiftyOne](https://voxel51.com/fiftyone/).
+Developed at the **Department of Computer Languages and Computer Science, University of Málaga**. Built upon open-source foundations from [PyTorch](https://pytorch.org/), [MMPose](https://github.com/open-mmlab/mmpose), [Hydra](https://hydra.cc/), and [FiftyOne](https://voxel51.com/fiftyone/).

@@ -4,11 +4,11 @@ title: "Human Pose Estimation by Probabilistic Mixtures of Gaussian and Uniform 
 authors:
   - family-names: "Reina-Alguacil"
     given-names: "Santiago"
-    affiliation: "University of Málaga"
+    affiliation: "Department of Computer Languages and Computer Science, University of Málaga"
     email: "santiagoreina@uma.es"
   - family-names: "López-Rubio"
     given-names: "Ezequiel"
-    affiliation: "University of Málaga"
+    affiliation: "Department of Computer Languages and Computer Science, University of Málaga"
     email: "ezeqlr@uma.es"
 version: 1.0.0
 date-released: "2026-08-21"
@@ -29,12 +29,12 @@ preferred-citation:
   authors:
     - family-names: "Reina-Alguacil"
       given-names: "Santiago"
-      affiliation: "University of Málaga"
+      affiliation: "Department of Computer Languages and Computer Science, University of Málaga"
     - family-names: "López-Rubio"
       given-names: "Ezequiel"
-      affiliation: "University of Málaga"
+      affiliation: "Department of Computer Languages and Computer Science, University of Málaga"
   title: "Human Pose Estimation by Probabilistic Mixtures of Gaussian and Uniform Distributions"
   year: 2026
   institution:
-    name: "University of Málaga"
+    name: "Department of Computer Languages and Computer Science, University of Málaga"
   notes: "Preprint / Manuscript under review"
