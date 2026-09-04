@@ -48,11 +48,9 @@ This framework introduces a post-hoc, continuous probabilistic formulation that 
 
 To rigorously dissect the framework, it is formally decoupled into two operating flows:
 
-1. **The Solitary Flow (Base Representation)**:
-   $$\text{Image} \longrightarrow \text{Heatmap} \longrightarrow \text{Sampling} \longrightarrow \text{GMM + Uniform}$$
+1. **The Solitary Flow (Base Representation)** ($\text{Image} \rightarrow \text{Heatmap} \rightarrow \text{Sampling} \rightarrow \text{GMM + Uniform}$):
    Operates strictly on the raw, unaugmented heatmap. In this basic mode, continuous spatial support is recovered, and bimodal topological ambiguities are explicitly parameterized ($K=2$) without requiring external test-time transformations or graph optimization.
-2. **The Global Stochastic Flow (TTA + MRF)**:
-   $$\text{Image} \longrightarrow \text{TTA Heatmaps} \longrightarrow \text{Sampling} \longrightarrow \text{GMM + Uniform} \longrightarrow \text{MRF}$$
+2. **The Global Stochastic Flow (TTA + MRF)** ($\text{Image} \rightarrow \text{TTA Heatmaps} \rightarrow \text{Sampling} \rightarrow \text{GMM + Uniform} \rightarrow \text{MRF}$):
    The full pipeline leverages multi-view stochastic evidence to mitigate heatmap poisoning, extracts continuous spatial distributions, and decodes global skeletal geometry via Markov Random Field belief propagation.
 
 ```text
@@ -203,10 +201,19 @@ $$
 \mathbf{y}^* = \arg\max_{\mathbf{y}} \prod_{i \in \mathcal{V}} \phi_i(y_i) \prod_{(i,j) \in \mathcal{E}} \psi_{ij}(y_i, y_j)
 $$
 
-- **Unary Potential** (mixing weight modulated by spatial compactness):
-  $$\phi_i(y_i = \boldsymbol{\mu}_c) = \pi_c \cdot \exp\left(-\frac{1}{2} \log|\mathbf{\Sigma}_c|\right)$$
-- **Kinematic Pairwise Prior** (**Equation 8**):
-  $$\psi_{ij}(y_i, y_j) = \exp \left( - \frac{ \left( \| y_i - y_j \|_2 - (\mu_{ij}^{\text{bone}} \cdot \sqrt{A_{\text{box}}}) \right)^2 }{ 2 \left( \sigma_{ij}^{\text{bone}} \cdot \sigma_{\text{mult}} \cdot \sqrt{A_{\text{box}}} \right)^2 } \right)$$
+The tree decoding evaluates two complementary potentials:
+
+**1. Unary Potential** (mixing weight modulated by spatial compactness bonus):
+
+$$
+\phi_i(y_i = \boldsymbol{\mu}_c) = \pi_c \cdot \exp\left(-\frac{1}{2} \log|\mathbf{\Sigma}_c|\right)
+$$
+
+**2. Kinematic Pairwise Prior** (**Equation 8**):
+
+$$
+\psi_{ij}(y_i, y_j) = \exp \left( - \frac{ \left( \| y_i - y_j \|_2 - (\mu_{ij}^{\text{bone}} \cdot \sqrt{A_{\text{box}}}) \right)^2 }{ 2 \left( \sigma_{ij}^{\text{bone}} \cdot \sigma_{\text{mult}} \cdot \sqrt{A_{\text{box}}} \right)^2 } \right)
+$$
 
 where $\mu\_{ij}^{\text{bone}}$ and $\sigma\_{ij}^{\text{bone}}$ are empirical bone length statistics, $\sigma\_{\text{mult}} = 2.0$ accounts for 2D perspective tolerance, and $A\_{\text{box}}$ is the bounding box area.
 
