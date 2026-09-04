@@ -1,11 +1,11 @@
 [tool.poetry]
-name = "robust-pose-tta"
+name = "probabilistic-pose-gmm"
 version = "0.1.0"
 description = "Test-Time Adaptation for Robust Human Pose Estimation with Uncertainty Quantification"
 authors = ["Santiago Reina-Alguacil <santiagoreina@uma.es>", "Ezequiel López-Rubio <ezeqlr@uma.es>"]
 license = "MIT"
 readme = "README.md"
-repository = "https://github.com/santiago-git19/robust-pose-tta"
+repository = "https://github.com/santiago-git19/probabilistic-pose-gmm"
 packages = [{include = "pose_uncertainty", from = "src"}]
 
 [[tool.poetry.source]]

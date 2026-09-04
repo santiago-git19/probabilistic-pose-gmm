@@ -22,7 +22,7 @@ DATA_ROOT = PROJECT_ROOT / "outputs" / "data"
 LOCAL_ZIP_PATH = PROJECT_ROOT / "outputs" / "benchmark_results_parquet.zip"
 
 DEFAULT_RELEASE_URL = (
-    "https://github.com/santiago-git19/robust-pose-tta/releases/download/v1.0.0/benchmark_results_parquet.zip"
+    "https://github.com/santiago-git19/probabilistic-pose-gmm/releases/download/v1.0.0/benchmark_results_parquet.zip"
 )
 
 EXPECTED_FILES = [

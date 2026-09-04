@@ -242,7 +242,7 @@ The repository provides automated generation for all 5 publication-grade qualita
 Designed following **SOLID principles** and **Clean Architecture**:
 
 ```
-robust-pose-tta/
+probabilistic-pose-gmm/
 ├── configs/                              # Modular Hydra experiment configuration ecosystem
 │   ├── config.yaml                       # Master configuration entrypoint
 │   ├── dataset/                          # Dataset schemas (coco.yaml, crowdpose.yaml, ochuman.yaml)
@@ -279,8 +279,8 @@ robust-pose-tta/
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/santiago-git19/robust-pose-tta.git
-cd robust-pose-tta
+git clone https://github.com/santiago-git19/probabilistic-pose-gmm.git
+cd probabilistic-pose-gmm
 
 # 2. Setup local MMPose engine & download pretrained model checkpoints
 poetry run python scripts/models_installation/setup_models.py
