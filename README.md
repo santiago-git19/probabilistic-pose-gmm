@@ -513,11 +513,12 @@ Standard multi-view pose estimation models project 2D heatmaps into massive 3D v
 If you use this codebase or methodology in your research, please cite:
 
 ```bibtex
-@article{reina2026robustposetta,
-  title   = {Human Pose Estimation by Probabilistic Mixtures of Gaussian and Uniform Distributions: Continuous Modeling, Test-Time Adaptation, and Uncertainty Calibration},
-  author  = {Reina-Alguacil, Santiago and L{\'o}pez-Rubio, Ezequiel},
-  journal = {Information Fusion},
-  year    = {2026}
+@misc{reina2026probabilistic,
+  title        = {Human Pose Estimation by Probabilistic Mixtures of Gaussian and Uniform Distributions},
+  author       = {Reina-Alguacil, Santiago and L{\'o}pez-Rubio, Ezequiel},
+  year         = {2026},
+  howpublished = {\url{https://github.com/santiago-git19/probabilistic-pose-gmm}},
+  note         = {University of M{\'a}laga. Preprint}
 }
 ```
 

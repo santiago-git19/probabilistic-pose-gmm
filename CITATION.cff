@@ -1,6 +1,6 @@
 cff-version: 1.2.0
 message: "If you use this software, methodology, or benchmark in your research, please cite it as below."
-title: "Human Pose Estimation by Probabilistic Mixtures of Gaussian and Uniform Distributions: Continuous Modeling, Test-Time Adaptation, and Uncertainty Calibration"
+title: "Human Pose Estimation by Probabilistic Mixtures of Gaussian and Uniform Distributions"
 authors:
   - family-names: "Reina-Alguacil"
     given-names: "Santiago"
@@ -20,13 +20,12 @@ keywords:
   - "test-time-adaptation"
   - "uncertainty-quantification"
   - "gaussian-mixture-models"
-  - "expectation-maximization"
   - "mrf-graph-decoding"
   - "out-of-distribution-detection"
   - "computer-vision"
   - "deep-learning"
 preferred-citation:
-  type: article
+  type: generic
   authors:
     - family-names: "Reina-Alguacil"
       given-names: "Santiago"
@@ -34,6 +33,8 @@ preferred-citation:
     - family-names: "López-Rubio"
       given-names: "Ezequiel"
       affiliation: "University of Málaga"
-  title: "Human Pose Estimation by Probabilistic Mixtures of Gaussian and Uniform Distributions: Continuous Modeling, Test-Time Adaptation, and Uncertainty Calibration"
-  journal: "Information Fusion"
+  title: "Human Pose Estimation by Probabilistic Mixtures of Gaussian and Uniform Distributions"
   year: 2026
+  institution:
+    name: "University of Málaga"
+  notes: "Preprint / Manuscript under review"
