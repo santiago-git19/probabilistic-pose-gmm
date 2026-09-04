@@ -1,0 +1,44 @@
+ACADEMIC RESEARCH AND NON-COMMERCIAL USE LICENSE
+
+Copyright (c) 2026 Santiago Reina-Alguacil, Ezequiel López-Rubio
+Department of Computer Science and Artificial Intelligence, University of Málaga (UMA), Spain.
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification,
+are permitted for academic, educational, and non-commercial research purposes ONLY,
+subject to the following conditions:
+
+1. MANDATORY CITATION REQUIREMENT:
+   Any publication, academic paper, technical report, thesis, presentation,
+   benchmark comparison, dataset, software, or project that directly or indirectly
+   uses, incorporates, evaluates, builds upon, or references this codebase, its
+   underlying methodology, algorithms, or precomputed results MUST formally and
+   prominently cite the following publication:
+
+   Santiago Reina-Alguacil and Ezequiel López-Rubio,
+   "Human Pose Estimation by Probabilistic Mixtures of Gaussian and Uniform Distributions: Continuous Modeling, Test-Time Adaptation, and Uncertainty Calibration",
+   Information Fusion, 2026.
+   Repository: https://github.com/santiago-git19/probabilistic-pose-gmm
+
+2. STRICT NON-COMMERCIAL RESTRICTION:
+   The Software, its algorithms, weights, artifacts, and derivative works may NOT
+   be used, sold, licensed, leased, incorporated into commercial products, or used
+   for revenue-generating, advertising, or commercial purposes in any form,
+   neither directly nor indirectly, without prior explicit written agreement and
+   licensing from the copyright holders.
+
+3. RETENTION OF NOTICES:
+   All redistributions of source code, modified files, or binary form must retain
+   the above copyright notice, this list of conditions, and the following disclaimer.
+
+DISCLAIMER:
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
+EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT
+SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
+TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
+BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
+ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
+DAMAGE.

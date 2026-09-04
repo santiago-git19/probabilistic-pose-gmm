@@ -525,6 +525,6 @@ If you use this codebase or methodology in your research, please cite:
 
 ## 📄 License & Acknowledgments
 
-This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
+This project is licensed under an **Academic and Non-Commercial Research License** with mandatory citation requirement - see the [LICENSE](LICENSE) file for details.
 
 Developed at the **University of Málaga**. Built upon open-source foundations from [PyTorch](https://pytorch.org/), [MMPose](https://github.com/open-mmlab/mmpose), [Hydra](https://hydra.cc/), and [FiftyOne](https://voxel51.com/fiftyone/).

@@ -1,0 +1,39 @@
+cff-version: 1.2.0
+message: "If you use this software, methodology, or benchmark in your research, please cite it as below."
+title: "Human Pose Estimation by Probabilistic Mixtures of Gaussian and Uniform Distributions: Continuous Modeling, Test-Time Adaptation, and Uncertainty Calibration"
+authors:
+  - family-names: "Reina-Alguacil"
+    given-names: "Santiago"
+    affiliation: "University of Málaga"
+    email: "santiagoreina@uma.es"
+  - family-names: "López-Rubio"
+    given-names: "Ezequiel"
+    affiliation: "University of Málaga"
+    email: "ezeqlr@uma.es"
+version: 1.0.0
+date-released: "2026-08-21"
+license: "LicenseRef-Academic-NonCommercial"
+url: "https://github.com/santiago-git19/probabilistic-pose-gmm"
+repository-code: "https://github.com/santiago-git19/probabilistic-pose-gmm"
+keywords:
+  - "human-pose-estimation"
+  - "test-time-adaptation"
+  - "uncertainty-quantification"
+  - "gaussian-mixture-models"
+  - "expectation-maximization"
+  - "mrf-graph-decoding"
+  - "out-of-distribution-detection"
+  - "computer-vision"
+  - "deep-learning"
+preferred-citation:
+  type: article
+  authors:
+    - family-names: "Reina-Alguacil"
+      given-names: "Santiago"
+      affiliation: "University of Málaga"
+    - family-names: "López-Rubio"
+      given-names: "Ezequiel"
+      affiliation: "University of Málaga"
+  title: "Human Pose Estimation by Probabilistic Mixtures of Gaussian and Uniform Distributions: Continuous Modeling, Test-Time Adaptation, and Uncertainty Calibration"
+  journal: "Information Fusion"
+  year: 2026
