@@ -34,4 +34,4 @@ scratch/
 wandb/
 .pytest_cache/
 .coverage
-htmlcov/
+htmlcov/"logs/" 
