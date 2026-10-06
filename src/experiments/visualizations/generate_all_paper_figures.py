@@ -1,6 +1,4 @@
 """
-Generate All Paper Figures: High-Impact Visualizations for Elsevier / Information Fusion.
-
 Generates publication-ready figures (3 candidates per figure type) with the exact technical layout,
 color hierarchy, and styling specified in the Paper Guidelines:
 
@@ -433,7 +431,7 @@ def render_figure_1(packet: Dict[str, Any], focus_kp_idx: int, out_dir: Path, ca
 
     # --- PANEL A: Global Skeletal Prediction ---
     ax_a.imshow(img_rgb)
-    ax_a.set_title(f"(a) Global Pose [{mode_tag.upper().replace('_', ' ')} Mode]", fontsize=14, fontweight="bold", pad=8)
+    ax_a.set_title(f"(a) Global Pose", fontsize=14, fontweight="bold", pad=8)
 
     # GT Skeleton
     if isinstance(gt, np.ndarray):
@@ -531,7 +529,7 @@ def render_figure_1(packet: Dict[str, Any], focus_kp_idx: int, out_dir: Path, ca
                     ax_c.add_patch(patches.Polygon(v2_hm, closed=True, fill=False, edgecolor=COLOR_OURS, lw=2.0))
                 ax_c.scatter(m_hm[j, 0], m_hm[j, 1], color=COLOR_OURS, marker="+", s=100, lw=2.5, zorder=8)
 
-        ax_c.set_title(f"(c) Aggregated Heatmap $\\bar{{H}}_{{{focus_name}}}$", fontsize=14, fontweight="bold", pad=8)
+        ax_c.set_title(f"(c) Aggregated Heatmap", fontsize=14, fontweight="bold", pad=8)
         ax_c.axis("off")
 
     # Save PDF & PNG
@@ -620,13 +618,13 @@ def _draw_mrf_row_panels(ax_a, ax_b, ax_c, pkt: Dict[str, Any], focus_kp_idx: in
     ax_b.imshow(crop, extent=[x_min, x_max, y_max, y_min])
     ax_b.scatter(p_coord[0], p_coord[1], color=COLOR_PARENT, marker="s", s=130, edgecolors="black", label=f"Anchor ({parent_name})", zorder=5)
 
-    prior_ring = patches.Circle((p_coord[0], p_coord[1]), mu_px, fill=False, edgecolor=COLOR_RING, linestyle="--", lw=2.0, label=f"Prior Length \u03bc = {mu_px:.0f}px", zorder=4)
+    prior_ring = patches.Circle((p_coord[0], p_coord[1]), mu_px, fill=False, edgecolor=COLOR_RING, linestyle="--", lw=2.0, label=f"Prior Length \u03bc", zorder=4)
     prior_band = patches.Wedge((p_coord[0], p_coord[1]), mu_px + sigma_px, 0, 360, width=2*sigma_px, facecolor=COLOR_RING, alpha=0.18, label="Prior Band \u03bc \u00b1 2\u03c3", zorder=3)
     ax_b.add_patch(prior_band)
     ax_b.add_patch(prior_ring)
 
     d_gmm = float(np.linalg.norm(c_gmm - p_coord))
-    ax_b.scatter(c_gmm[0], c_gmm[1], color=COLOR_DARK, marker="x", s=120, lw=2.5, label=f"GMM Unary (d = {d_gmm:.0f}px)", zorder=6)
+    ax_b.scatter(c_gmm[0], c_gmm[1], color=COLOR_DARK, marker="x", s=120, lw=2.5, label=f"GMM Unary", zorder=6)
     if isinstance(gt, np.ndarray) and gt[focus_kp_idx, 2] > 0:
         ax_b.scatter(c_gt[0], c_gt[1], color=COLOR_GT, marker="o", s=120, edgecolors="black", label="Ground Truth", zorder=6)
 
@@ -650,7 +648,7 @@ def _draw_mrf_row_panels(ax_a, ax_b, ax_c, pkt: Dict[str, Any], focus_kp_idx: in
     ax_c.add_patch(arr)
 
     status_tag = "Kinematic Pull \u2192 Restored" if is_success else "Rigidity Drag \u2192 Error"
-    ax_c.set_title(f"(c{row_tag}) MRF: {status_tag}\nLength: d = {d_mrf:.0f}px (Prior \u03bc = {mu_px:.0f}px)", fontsize=11, fontweight="bold")
+    ax_c.set_title(f"(c{row_tag}) MRF: {status_tag}", fontsize=11, fontweight="bold")
     ax_c.legend(loc="lower left", facecolor="white", labelcolor="black", edgecolor="#CCCCCC", fontsize=8.0, framealpha=0.88)
     ax_c.axis("off")
 
@@ -839,7 +837,7 @@ def render_figure_3(packet: Dict[str, Any], focus_kp_idx: int, out_dir: Path, ca
     ax_a.add_patch(rect)
     ds_name = meta.get("dataset_name", meta.get("dataset", "CrowdPose")).upper()
     vis_tag = " [vis=0, Absent]" if gt_coord is None else " [Occluded]"
-    ax_a.set_title(f"(a) Global Scene ({ds_name}{vis_tag})\nTarget: {focus_name}", fontsize=11, fontweight="bold")
+    ax_a.set_title(f"(a) Global Scene\nTarget: {focus_name} (Absent)", fontsize=11, fontweight="bold")
     ax_a.legend(loc="lower left", facecolor="white", labelcolor="black", edgecolor="#CCCCCC", fontsize=8, framealpha=0.88)
     ax_a.axis("off")
 
@@ -876,44 +874,43 @@ def render_figure_3(packet: Dict[str, Any], focus_kp_idx: int, out_dir: Path, ca
         if len(v2) > 0:
             ax_b.add_patch(patches.Polygon(v2, closed=True, fill=False, edgecolor=COLOR_ELLIPSE_2S, lw=2.2, linestyle="--", label="GMM 2\u03c3 Uncertainty Ellipse" if j==0 else "", zorder=4))
         
-        gmm_label = "GMM Center (Unimodal, $K=1$)" if len(m_img) == 1 else f"GMM Mode {j+1} ($w_{j+1}={w_j:.2f}$)"
+        gmm_label = "GMM Center (Unimodal)" if len(m_img) == 1 else f"GMM Mode {j+1} ($w_{j+1}={w_j:.2f}$)"
         ax_b.scatter(m_img[j, 0], m_img[j, 1], color=COLOR_OURS, marker="o", s=85, edgecolors="black", label=gmm_label, zorder=5)
 
     if dark_coord is not None:
-        ax_b.scatter(dark_coord[0], dark_coord[1], color=COLOR_DARK, marker="x", s=130, lw=3.0, label=f"DARK Lock ($P={dark_conf:.2f}$)", zorder=6)
+        ax_b.scatter(dark_coord[0], dark_coord[1], color=COLOR_DARK, marker="x", s=130, lw=3.0, label=f"DARK", zorder=6)
     if gt_coord is not None:
         ax_b.scatter(gt_coord[0], gt_coord[1], color=COLOR_GT, marker="o", s=120, edgecolors="black", label="Ground Truth", zorder=6)
     else:
         # Phantom dummy for legend when keypoint is absent
-        ax_b.plot([], [], ' ', label="Ground Truth: Absent (vis=0)")
+        ax_b.plot([], [], ' ', label="Ground Truth (Absent)")
 
-    ax_b.set_title(f"(b) Activation Map & Spatial Uncertainty\n$\\det(\\Sigma) = {cov_det:.2f}$ (Expanded Ellipse Alert)", fontsize=11, fontweight="bold")
-    ax_b.legend(loc="lower left", facecolor="white", labelcolor="black", edgecolor="#CCCCCC", fontsize=7.5, framealpha=0.88)
+    ax_b.set_title(f"(b) Activation Map & Spatial Uncertainty", fontsize=11, fontweight="bold")
+    ax_b.legend(loc="lower left", facecolor="white", labelcolor="white", edgecolor="#CCCCCC", fontsize=7.5, framealpha=0.88)
     ax_b.axis("off")
-
-    # (c) Diagnostic Bar Chart with Clean Spacing
+ 
+        # (c) Diagnostic Bar Chart with Clean Spacing
     labels = [
-        f"DARK Conf\n($P={dark_conf:.2f}$)",
-        f"Accuracy\n($\\mathrm{{OKS}}={dark_oks:.2f}$)" if gt_coord is not None else "GT Status\n($\\mathrm{vis}=0$ Absent)",
-        f"Heuristic Alert\n($1-P={u_heuristic:.2f}$)",
-        f"GMM Spatial Alert\n($\\det\\Sigma={cov_det:.2f}$)"
+        f"DARK Conf\n($P_\\mathrm{{DARK}}$)",
+        f"Heuristic Alert\n($1-P_\\mathrm{{DARK}}$)",
+        f"GMM Spatial Alert\n($\\det\\Sigma_\\mathrm{{final}}$)"
     ]
 
     det_norm = min(1.0, float(np.log1p(cov_det) / np.log1p(40.0)))
-    vals = [dark_conf, dark_oks, u_heuristic, det_norm]
-    bar_colors = [COLOR_DARK, "#9E9E9E", "#81C784", COLOR_ELLIPSE_2S]
+    vals = [dark_conf, u_heuristic, det_norm]
+    bar_colors = [COLOR_DARK, "#81C784", COLOR_ELLIPSE_2S]
 
     y_pos = np.arange(len(labels))
-    bars = ax_c.barh(y_pos, vals, color=bar_colors, height=0.52, edgecolor="black", lw=1.2, zorder=3)
+    bars = ax_c.barh(y_pos, vals, color=bar_colors, height=0.48, edgecolor="black", lw=1.2, zorder=3)
     ax_c.set_yticks(y_pos)
-    ax_c.set_yticklabels(labels, fontsize=8.5, fontweight="bold")
+    ax_c.set_yticklabels(labels, fontsize=9.0, fontweight="bold")
     ax_c.set_xlim(0, 1.28)
     ax_c.set_xlabel("Normalized Magnitude [0.0 - 1.0]", fontsize=9.5, fontweight="bold")
-    ax_c.set_title(f"(c) Diagnostic Uncertainty Profile\nShannon Entropy = {entropy_val:.2f} nats", fontsize=11, fontweight="bold")
+    ax_c.set_title(f"(c) Diagnostic Uncertainty Profile", fontsize=11, fontweight="bold")
     ax_c.grid(axis="x", linestyle=":", alpha=0.6, zorder=0)
 
     # Label text per bar
-    text_labels = [f"{dark_conf:.2f}", f"{dark_oks:.2f}" if gt_coord is not None else "0.00", f"{u_heuristic:.2f}", f"det={cov_det:.2f}"]
+    text_labels = [f"{dark_conf:.2f}", f"{u_heuristic:.2f}", f"det={cov_det:.2f}"]
     for bar, v, txt in zip(bars, vals, text_labels):
         ax_c.text(v + 0.025, bar.get_y() + bar.get_height() / 2, txt, va="center", fontweight="bold", fontsize=9.0)
 
@@ -1109,14 +1106,14 @@ def render_figure_4(packet: Dict[str, Any], focus_kp_idx: int, out_dir: Path, ca
 
         if is_poison:
             exit_label = f"Out-of-FoV by {dist_s:.1f}px" if dist_s > 0 else "Out-of-FoV Crop"
-            ax.set_title(f"({letter}) Scale {s_str}$\\times$ ({exit_label})\nConf $\\mathcal{{C}}_k = {c_val:.3f}$ ($w_k={w_val*100:.1f}\\%$) [POISONED / FLAT]", fontsize=9.5, fontweight="bold", color=COLOR_DARK)
+            ax.set_title(f"({letter}) Scale {s_str}$\\times$ ({exit_label})\nConf $\\mathcal{{C}}_k = {c_val:.3f}$ ($w_k={w_val*100:.1f}\\%$)", fontsize=9.5, fontweight="bold", color=COLOR_DARK)
             for spine in ax.spines.values():
                 spine.set_edgecolor(COLOR_DARK)
                 spine.set_linewidth(2.8)
                 spine.set_linestyle("--")
                 spine.set_visible(True)
         else:
-            ax.set_title(f"({letter}) Scale {s_str}$\\times$ (In-Bounds Crop)\nConf $\\mathcal{{C}}_k = {c_val:.3f}$ ($w_k={w_val*100:.1f}\\%$)", fontsize=9.5, fontweight="bold")
+            ax.set_title(f"({letter}) Scale {s_str}$\\times$\nConf $\\mathcal{{C}}_k = {c_val:.3f}$ ($w_k={w_val*100:.1f}\\%$)", fontsize=9.5, fontweight="bold")
         ax.axis("off")
 
     # ---------------- Fila 2: Unweighted Aggregation vs Ours Weighted Aggregation vs Quantitative Profile ----------------
@@ -1125,10 +1122,10 @@ def render_figure_4(packet: Dict[str, Any], focus_kp_idx: int, out_dir: Path, ca
     ax_f = fig.add_subplot(gs[1, 2])
 
     # (d) Unweighted Arithmetic Average (Poisoned by out-of-FoV scale)
-    naive_hm = (h1 + h2 + h3) / 3.0
+    naive_hm = hm_unweighted_all[focus_kp_idx] # (h1 + h2 + h3) / 3.0
     naive_norm = naive_hm / max(1e-6, np.max(naive_hm))
     ax_d.imshow(naive_norm, cmap="inferno")
-    ax_d.set_title(f"(d) Unweighted Heatmap (Arithmetic Mean)\nDiluted Peak / Noise $\\rightarrow \\mathrm{{OKS}}_{{\\mathrm{{GMM}}}}={oks_unweighted:.2f}$", fontsize=10.0, fontweight="bold", color=COLOR_DARK)
+    ax_d.set_title(f"(d) Unweighted Heatmap (Arithmetic Mean)\n$\\mathrm{{OKS}}_{{\\mathrm{{GMM}}}}={oks_unweighted:.2f}$", fontsize=10.0, fontweight="bold", color=COLOR_DARK)
     for spine in ax_d.spines.values():
         spine.set_edgecolor(COLOR_DARK)
         spine.set_linewidth(2.2)
@@ -1142,7 +1139,7 @@ def render_figure_4(packet: Dict[str, Any], focus_kp_idx: int, out_dir: Path, ca
 
     ours_norm = avg_hm[focus_kp_idx] / max(1e-6, np.max(avg_hm[focus_kp_idx]))
     ax_e.imshow(ours_norm, cmap="inferno")
-    ax_e.set_title(f"(e) Weighted Heatmap (Ours Quality Gated)\nSharp Peak Preserved $\\rightarrow \\mathrm{{OKS}}_{{\\mathrm{{GMM}}}}={oks_weighted:.2f}$", fontsize=10.0, fontweight="bold", color=COLOR_OURS)
+    ax_e.set_title(f"(e) Weighted Heatmap (Ours)\n$\\mathrm{{OKS}}_{{\\mathrm{{GMM}}}}={oks_weighted:.2f}$", fontsize=10.0, fontweight="bold", color=COLOR_OURS)
     for spine in ax_e.spines.values():
         spine.set_edgecolor(COLOR_OURS)
         spine.set_linewidth(2.2)
@@ -1151,9 +1148,9 @@ def render_figure_4(packet: Dict[str, Any], focus_kp_idx: int, out_dir: Path, ca
 
     # (f) Quantitative Comparison Bar Chart
     bar_labels = [
-        f"Baseline (No TTA)\n($\\mathrm{{OKS}}={oks_base:.2f}$)",
-        f"Unweighted Mean\n($\\mathrm{{OKS}}={oks_unweighted:.2f}$ Poisoned)",
-        f"Ours Weighted Mean\n($\\mathrm{{OKS}}={oks_weighted:.2f}$ Rescued)"
+        f"Baseline (No TTA)",
+        f"Unweighted Mean",
+        f"Ours Weighted Mean"
     ]
     bar_vals = [oks_base, oks_unweighted, oks_weighted]
     bar_colors = ["#78909C", COLOR_DARK, COLOR_OURS]
@@ -1230,12 +1227,13 @@ def render_figure_5(base_pkt: Dict[str, Any], out_dir: Path, cand_name: str, mod
     else:
         bbox = (0.0, 0.0, float(w_orig), float(h_orig))
 
-    levels = ["Clean (1.00x)", "Low (0.50x)", "Med (0.25x)", "High (0.125x)", "Extreme (0.062x)"]
+    levels = ["Clean", "Low", "Medium", "High", "Extreme"]
     scale_factors = [1.0, 0.5, 0.25, 0.125, 0.0625]
 
     plt.style.use("seaborn-v0_8-white")
     fig = plt.figure(figsize=(17.5, 7.8), dpi=300)
-    gs = fig.add_gridspec(2, 5, height_ratios=[1.1, 1.25], hspace=0.30, wspace=0.18)
+    fig.suptitle(f"Noise Absorption via Uniform Component ({focus_name})", fontsize=13.5, fontweight="bold", y=0.98)
+    gs = fig.add_gridspec(2, 5, height_ratios=[1.1, 1.25], hspace=0.32, wspace=0.18)
 
     for idx, (lvl, s_f) in enumerate(zip(levels, scale_factors)):
         ax_img = fig.add_subplot(gs[0, idx])
@@ -1328,7 +1326,7 @@ def render_figure_5(base_pkt: Dict[str, Any], out_dir: Path, cand_name: str, mod
         deg_img_tinted = cv2.addWeighted(disp_img, 1.0 - tint_alpha, purple_layer, tint_alpha, 0)
 
         ax_img.imshow(deg_img_tinted)
-        ax_img.set_title(f"Image: {lvl}\n$\\pi_{{\\mathrm{{uniform}}}} = {pi_u*100:.2f}\\%$ Absorbed", fontsize=10.5, fontweight="bold")
+        ax_img.set_title(f"Image: {lvl}", fontsize=10.5, fontweight="bold")
         for spine in ax_img.spines.values():
             if pi_u >= 0.10:
                 spine.set_edgecolor(COLOR_UNIFORM)
@@ -1364,7 +1362,7 @@ def render_figure_5(base_pkt: Dict[str, Any], out_dir: Path, cand_name: str, mod
                 ax_hm.add_patch(patches.Polygon(v2, closed=True, fill=False, edgecolor=COLOR_OURS, lw=2.2, zorder=8))
             ax_hm.scatter(mu[0], mu[1], color=COLOR_OURS, marker="+", s=100, lw=2.2, zorder=9)
 
-        ax_hm.set_title(f"Heatmap & GMM Fit ({focus_name})\n$\\pi_g = {pi_g*100:.1f}\\%$ | $\\pi_u = {pi_u*100:.1f}\\%$", fontsize=10.0, fontweight="bold")
+        ax_hm.set_title(f"Heatmap & GMM Fit\n$\\pi_g = {pi_g*100:.1f}\\%$ | $\\pi_u = {pi_u*100:.1f}\\%$", fontsize=10.0, fontweight="bold")
         if idx == 4:
             ax_hm.legend(loc="upper right", facecolor="black", labelcolor="white", fontsize=7.5, framealpha=0.85)
 
