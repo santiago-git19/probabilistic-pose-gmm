@@ -22,7 +22,7 @@ import numpy as np
 import pytest
 
 # ── Module under test ──────────────────────────────────────────────────
-from pose_uncertainty.pipeline.tta import TTAEngine, TTAMetadata, Augmenter
+from pose_uncertainty.pipeline.tta import TTAEngine, TTAMetadata
 
 
 # =====================================================================
@@ -467,17 +467,6 @@ class TestTTAMetadata:
         assert m.is_flipped is True
         assert m.transform_type == "flip+noise"
         assert m.photometric_params == {"sigma": 10.0}
-
-
-# =====================================================================
-# 7. Backward-compatible alias
-# =====================================================================
-
-class TestBackwardCompat:
-    """``Augmenter`` must be importable and equal to TTAEngine."""
-
-    def test_augmenter_is_tta_engine(self):
-        assert Augmenter is TTAEngine
 
 
 # =====================================================================
