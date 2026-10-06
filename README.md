@@ -10,7 +10,7 @@
 
 ---
 
-## 📖 Table of Contents
+## Table of Contents
 
 - [Executive Summary & Pipeline Taxonomy](#-executive-summary--pipeline-taxonomy)
 - [Core Theoretical Contributions](#-core-theoretical-contributions)
@@ -40,7 +40,7 @@
 
 ---
 
-## 🔬 Executive Summary & Pipeline Taxonomy
+## Executive Summary & Pipeline Taxonomy
 
 Despite advancements in sub-pixel decoding, modern Human Pose Estimation (HPE) architectures (e.g., HRNet, ViTPose, ResNet) remain fundamentally constrained by **deterministic point-regression** ($\mathrm{argmax}$ or local Taylor expansions). Under severe real-world conditions—such as **progressive downsampling/resolution loss**, **motion blur**, **dense multi-person crowding**, and **symmetric limb ambiguities**—deterministic coordinate extraction systematically collapses: it cross-collapses limbs, introduces spatial jitter, and fails to communicate heteroscedastic uncertainty.
 
@@ -74,7 +74,7 @@ To rigorously dissect the framework, it is formally decoupled into two operating
 
 ---
 
-## 🌟 Core Theoretical Contributions
+## Core Theoretical Contributions
 
 1. **Continuous Point Estimation at Parity with DARK**:
    The solitary mathematical expectation of the primary Gaussian component ($\boldsymbol{\mu}$) matches the sub-pixel precision of the state-of-the-art Taylor-expanded DARK decoder (within $\pm 0.0008$ OKS) across clean and corrupted benchmarks without relying on local Hessian approximations.
@@ -95,7 +95,7 @@ To rigorously dissect the framework, it is formally decoupled into two operating
 
 ---
 
-## 📐 Methodology & Mathematical Formulation
+## Methodology & Mathematical Formulation
 
 ![Methodology Pipeline Overview](assets/methodology_pipeline_overview.png)
 
@@ -251,7 +251,7 @@ $$
 
 ---
 
-## 📊 Comprehensive Empirical Benchmarks & Ablation Studies
+## Comprehensive Empirical Benchmarks & Ablation Studies
 
 ### Ablation 1: Baseline Precision Parity (DARK vs. GMM Expectation)
 
@@ -384,7 +384,7 @@ Evaluated across architectures on COCO val2017 (256 × 192):
 
 ---
 
-## 🖼️ Qualitative Diagnostic Suite (Publication Figures 1–5)
+## Qualitative Diagnostic Suite (Publication Figures 1–5)
 
 The repository provides automated generation for all 5 publication-grade qualitative diagnostic figures:
 
@@ -398,7 +398,7 @@ The repository provides automated generation for all 5 publication-grade qualita
 
 ---
 
-## 📂 Repository Structure & Clean Architecture
+## Repository Structure & Clean Architecture
 
 Designed following **SOLID principles** and **Clean Architecture**:
 
@@ -429,7 +429,7 @@ probabilistic-pose-gmm/
 
 ---
 
-## ⚙️ Installation & Environment Setup
+## Installation & Environment Setup
 
 ### Prerequisites
 - Python 3.11 (`python --version`)
@@ -479,7 +479,7 @@ poetry run pytest src/tests --ignore=models/mmpose -v
 
 ---
 
-## 🚀 One-Click Scientific Reproduction Suite
+## One-Click Scientific Reproduction Suite
 
 The repository includes a comprehensive, automated reproduction harness [`scripts/reproduce_all.py`](scripts/reproduce_all.py) to regenerate all publication figures, uncertainty calibration plots, and benchmarks:
 
@@ -509,7 +509,7 @@ poetry run python scripts/reproduce_all.py --all
 
 ---
 
-## 💻 Quickstart: Python API
+## Quickstart: Python API
 
 The following self-contained example runs the complete end-to-end inference and uncertainty calibration pipeline using the exact configuration parameters from `configs/`:
 
@@ -630,7 +630,7 @@ print("Saved calibrated pose visualization to 'outputs/calibrated_pose_demo.jpg'
 
 ---
 
-## 📓 Jupyter Notebooks Experimental Suite
+## Jupyter Notebooks Experimental Suite
 
 The repository provides **17 interactive Jupyter notebooks** covering the complete developmental progression:
 
@@ -656,7 +656,7 @@ The repository provides **17 interactive Jupyter notebooks** covering the comple
 
 ---
 
-## 🔮 Limitations & Multi-View 3D Extensibility
+## Limitations & Multi-View 3D Extensibility
 
 ### Limitations
 1. **CPU Iterative Mixture Latency**: While the single-threaded CPU implementation of the EM loop currently limits throughput to 0.5–0.7 FPS, batch-tensor GPU parallelization across all 17 joints provides an immediate pathway to substantially enhance overall throughput toward interactive frame rates.
@@ -669,7 +669,7 @@ Standard multi-view pose estimation models project 2D heatmaps into massive 3D v
 
 ---
 
-## 📑 Citation
+## Citation
 
 If you use this codebase or methodology in your research, please cite:
 
@@ -685,7 +685,7 @@ If you use this codebase or methodology in your research, please cite:
 
 ---
 
-## 📄 License & Acknowledgments
+## License & Acknowledgments
 
 This project is licensed under an **Academic and Non-Commercial Research License** with mandatory citation requirement - see the [LICENSE](LICENSE) file for details.
 
