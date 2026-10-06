@@ -821,6 +821,7 @@ def render_methodology_pipeline_figure(
     # =========================================================================
     target_dirs = [
         project_root / "outputs" / "figures" / "methodology",
+        project_root / "assets",
     ]
     if (project_root.parent / "Paper").exists():
         target_dirs.append(project_root.parent / "Paper" / "Paper" / "figures" / "methodology")
@@ -849,12 +850,16 @@ def render_methodology_pipeline_figure(
             png_path = t_dir / f"{filename_base}.png"
             for attempt in range(5):
                 try:
-                    shutil.copyfile(tmp_pdf, pdf_path)
+                    if t_dir.name != "assets":
+                        shutil.copyfile(tmp_pdf, pdf_path)
                     shutil.copyfile(tmp_png, png_path)
                     break
                 except OSError:
                     time.sleep(0.6)
-            logger.info("Saved Methodology Pipeline figure to:\n  - %s\n  - %s", pdf_path, png_path)
+            if t_dir.name != "assets":
+                logger.info("Saved Methodology Pipeline figure to:\n  - %s\n  - %s", pdf_path, png_path)
+            else:
+                logger.info("Saved Methodology Pipeline figure to README assets:\n  - %s", png_path)
 
 
 def main() -> None:
