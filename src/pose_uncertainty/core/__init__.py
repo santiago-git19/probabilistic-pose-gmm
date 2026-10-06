@@ -9,6 +9,8 @@ Modules:
 -------
 - mixture.py: Restricted Gaussian Mixture Model for bimodal pose distributions
 - sampling.py: Monte Carlo sampling strategies from heatmap distributions
+- mrf_decoder.py: Markov Random Field graph decoding and tree MAP inference
+- skeleton.py: Kinematic skeleton topology and bone length priors
 
 Design Principle:
 ----------------
@@ -21,4 +23,4 @@ deep learning frameworks. This enables:
 
 from typing import List
 
-__all__: List[str] = ["mixture", "sampling"]
+__all__: List[str] = ["mixture", "sampling", "mrf_decoder", "skeleton"]

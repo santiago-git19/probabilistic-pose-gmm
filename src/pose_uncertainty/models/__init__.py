@@ -16,7 +16,7 @@ Architecture:
 ------------
     User Code
         ↓
-    StochasticPoseRefiner (pipeline)
+    EvaluationRunner (pipeline)
         ↓
     BasePoseModel (abstract interface)
         ↓ ↓ ↓

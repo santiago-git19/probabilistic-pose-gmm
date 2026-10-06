@@ -13,9 +13,8 @@ Core Modules:
 -------------
 - tta:       Flip and photometric augmentation engine
 - scale_tta: Multi-scale bounding-box augmentation with FOV-aware fusion
-- refiner:   Main pipeline orchestrator
 """
 
 from typing import List
 
-__all__: List[str] = ["tta", "scale_tta", "refiner"]
+__all__: List[str] = ["tta", "scale_tta"]

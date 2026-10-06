@@ -70,10 +70,6 @@ class TTAMetadata:
     photometric_params: Optional[Dict[str, Any]] = None
 
 
-# Backwards-compatible alias expected by ``pipeline.refiner``
-Augmenter = None  # will be re-assigned at module level after class def
-
-
 # ---------------------------------------------------------------------------
 # TTAEngine
 # ---------------------------------------------------------------------------
@@ -378,10 +374,3 @@ class TTAEngine:
             if enabled:
                 parts.append(f" {name}=True")
         return ",".join(parts) + ")"
-
-
-# -----------------------------------------------------------------------
-# Backward-compatible alias for ``from .tta import Augmenter``
-# (used by ``pipeline.refiner``)
-# -----------------------------------------------------------------------
-Augmenter = TTAEngine
