@@ -92,7 +92,7 @@ evaluation:
   output_dir: ${paths.project_root}/outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}/eval_results
   batch_size_mass: 32           # Fast mass evaluation batch size (Stage 1)
   batch_size_deep: 1            # Deep profiling batch size (Stage 2)
-  debug_limit: 5            # Fast verification sample limit (null for full dataset evaluation)
+  debug_limit: 500            # Fast verification sample limit (null for full dataset evaluation)
 
 # Adaptive Uncertainty Fusion
 adaptive_uncertainty:

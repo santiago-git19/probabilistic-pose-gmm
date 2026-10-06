@@ -3,29 +3,13 @@
 # Enable/disable TTA
 enabled: true
 
-# Number of augmentations to generate
-#num_augmentations: 8
-# num_augmentations: No se usa en el código; el número de augmentaciones es el producto cartesiano automático:
-# num_images = (1 + flip_enabled) × (1 + sum(photometric_enabled))
-
-# Augmentation types to apply
-#augmentation_types:
-  #- horizontal_flip
-  #- rotation
-  #- scale
-
-# Rotation parameters (degrees)
-#rotation:
-#  enabled: true
-#  angles: [-15, -10, -5, 0, 5, 10, 15]
-
 # Scale parameters (multiplicative factors)
 # Operates on bounding boxes, NOT on images.  Each scale runs the full
 # flip+photometric inner loop, then heatmaps are inverse-transformed and
 # aggregated with confidence-weighted averaging to avoid heatmap poisoning
 # from out-of-FOV keypoints.
 scale:
-  enabled: true                     # master switch – flip-only by default
+  enabled: false                     # master switch – flip-only by default
   scales: [0.85, 0.925, 1.0, 1.075, 1.15]          # multiplicative factors (e.g., 0.9 = 10% smaller)
   confidence_threshold: 0.01        # soft floor (deprecated, kept for compatibility)
   aggregation: weighted_mean        # or max_confidence
@@ -51,7 +35,7 @@ scale:
 
 # Horizontal flip
 flip:
-  enabled: true
+  enabled: false
   flip_mode: heatmap  # Options: heatmap, udp_combined, offset
   shift_heatmap: true  # Shift flipped heatmaps for better alignment
   flip_indices: [0, 2, 1, 4, 3, 6, 5, 8, 7, 10, 9, 12, 11, 14, 13, 16, 15]  # Indices of symmetric keypoints (e.g., [1, 0, 3, 2, ...])
