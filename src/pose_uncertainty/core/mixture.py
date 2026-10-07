@@ -33,16 +33,13 @@ References:
 """
 
 from __future__ import annotations
-from typing import Tuple, Optional, List, Literal, Dict, Any
-from dataclasses import dataclass, field
+from typing import Tuple, Optional, List, Literal, Dict
 import logging
-import warnings
 from pose_uncertainty.utils.types import MixtureComponent, MixtureResult
 
 import numpy as np
 import numpy.typing as npt
 from scipy.cluster.vq import kmeans2
-from scipy.stats import multivariate_normal
 from scipy.linalg import eigvalsh
 
 # Configure logging
@@ -360,8 +357,6 @@ class RobustGaussianMixture:
         gaussian_probs = np.zeros((n_samples, self.n_components))
         for k, comp in enumerate(self.components_):
             try:
-                #rv = multivariate_normal(mean=comp.mean, cov=comp.covariance, allow_singular=True)
-                #gaussian_probs[:, k] = comp.weight * rv.pdf(samples)
                 pdf_values = self._gaussian_pdf(samples, comp.mean, comp.covariance)
                 gaussian_probs[:, k] = comp.weight * pdf_values
             except Exception as e:
@@ -438,55 +433,6 @@ class RobustGaussianMixture:
         # Normalize weights
         self._normalize_weights()
     
-    '''
-    def _m_step(
-        self,
-        samples: npt.NDArray[np.float64],
-        responsibilities: npt.NDArray[np.float64],
-        uniform_resp: npt.NDArray[np.float64]
-    ) -> None:
-        """
-        Vectorized M-step maintaining compatibility with self.components_ list.
-        """
-        n_samples, d = samples.shape
-        
-        # 1. Compute N_k (total weight of each component)
-        n_k = responsibilities.sum(axis=0)
-        
-        # Mask to prevent division by zero in inactive/dead components
-        active_mask = n_k > 1e-10
-        n_k_safe = np.where(active_mask, n_k, 1.0)
-        
-        # 2. Update Means: (K, N) @ (N, D) -> (K, D)
-        new_means = (responsibilities.T @ samples) / n_k_safe[:, np.newaxis]
-        
-        # 3. Update Covariances
-        # diff: (N, K, D)
-        diff = samples[:, np.newaxis, :] - new_means[np.newaxis, :, :]
-        
-        # einsum computes covariance matrices across all components simultaneously
-        new_covs = np.einsum('nk,nki,nkj->kij', responsibilities, diff, diff)
-        new_covs = new_covs / n_k_safe[:, np.newaxis, np.newaxis]
-        
-        # Vectorized regularization
-        new_covs += self.reg_covar * np.eye(d)
-        
-        # 4. Populate updated parameters into component objects
-        for k, comp in enumerate(self.components_):
-            if active_mask[k]:
-                comp.mean = new_means[k].astype(np.float32)
-                comp.covariance = new_covs[k].astype(np.float32)
-            
-            # Weight is updated unconditionally (falls to 0 if component is dead)
-            comp.weight = float(n_k[k] / n_samples)
-            comp.n_samples = int(n_k[k])
-        
-        # 5. Update uniform component weight
-        self.uniform_weight_ = float(uniform_resp.sum() / n_samples)
-        
-        # 6. Normalize to ensure mixture weights sum exactly to 1.0
-        self._normalize_weights()
-    '''
     def _check_dead_components(self, responsibilities: npt.NDArray[np.float64]) -> None:
         """Check for and handle dead components (π_k → 0)."""
         for k, comp in enumerate(self.components_):
@@ -515,8 +461,6 @@ class RobustGaussianMixture:
         probs = np.zeros(n_samples)
         for comp in self.components_:
             try:
-                #rv = multivariate_normal(mean=comp.mean, cov=comp.covariance, allow_singular=True)
-                #probs += comp.weight * rv.pdf(samples)
                 pdf_values = self._gaussian_pdf(samples, comp.mean, comp.covariance)
                 probs += comp.weight * pdf_values
             except Exception:
@@ -947,8 +891,3 @@ def fit_with_outer_loop(
         components=best_result.components,
         uniform_weight=best_result.uniform_weight
     )
-
-
-# =============================================================================
-# Legacy Class for Backward Compatibility
-# =============================================================================

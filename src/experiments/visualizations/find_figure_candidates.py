@@ -207,39 +207,6 @@ COCO_SYMMETRIC_PAIRS = [
 ]
 
 
-def identify_swapped_keypoints(row: pd.Series) -> str:
-    """
-    Identify which keypoint(s) suffered a swap based on per-joint OKS delta.
-    Returns formatted string with the keypoint name and its index (e.g. 'R_Wrist (kp=10)').
-    """
-    detected = []
-    for l_col, r_col, l_idx, r_idx, l_label, r_label in COCO_SYMMETRIC_PAIRS:
-        d_l = float(row.get(f"delta_oks_{l_col}", np.nan))
-        d_r = float(row.get(f"delta_oks_{r_col}", np.nan))
-
-        if not np.isnan(d_l) and d_l >= 0.15:
-            detected.append((d_l, f"{l_label} (kp={l_idx})"))
-        if not np.isnan(d_r) and d_r >= 0.15:
-            detected.append((d_r, f"{r_label} (kp={r_idx})"))
-
-    if detected:
-        detected.sort(key=lambda x: x[0], reverse=True)
-        return ", ".join([item[1] for item in detected[:2]])
-
-    best_kp, max_d = "N/A", -1.0
-    for l_col, r_col, l_idx, r_idx, l_label, r_label in COCO_SYMMETRIC_PAIRS:
-        d_l = float(row.get(f"delta_oks_{l_col}", -999))
-        d_r = float(row.get(f"delta_oks_{r_col}", -999))
-        if d_l > max_d:
-            max_d = d_l
-            best_kp = f"{l_label} (kp={l_idx})"
-        if d_r > max_d:
-            max_d = d_r
-            best_kp = f"{r_label} (kp={r_idx})"
-
-    return best_kp
-
-
 def extract_best_swapped_joint(row: pd.Series) -> Dict[str, Any]:
     """
     Find the symmetric joint that had the highest delta OKS and best recovery.

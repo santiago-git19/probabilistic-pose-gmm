@@ -19,9 +19,6 @@ import numpy as np
 import numpy.typing as npt
 
 
-from dataclasses import dataclass
-import numpy as np
-from typing import List, Optional, Tuple
 
 @dataclass
 class Keypoint:
@@ -169,58 +166,6 @@ class PoseEstimationResult:
         We use v_i = 2 for non-outliers with confidence > 0.3.
         """
         ...
-
-
-@dataclass
-class AugmentationParams:
-    """
-    Parameters defining a geometric augmentation applied during TTA.
-    
-    Mathematical Representation:
-    ---------------------------
-    Each augmentation can be represented as an affine transformation matrix A:
-    
-        [x']   [a  b  tx] [x]
-        [y'] = [c  d  ty] [y]
-        [1 ]   [0  0  1 ] [1]
-    
-    This class stores the semantic parameters (rotation angle, scale, flip)
-    which are converted to matrix form during application.
-    
-    Attributes:
-        rotation_angle: Rotation in degrees (counter-clockwise).
-        scale: Uniform scale factor (1.0 = no scaling).
-        horizontal_flip: Boolean flag for mirroring across vertical axis.
-        vertical_flip: Boolean flag (rarely used for pose).
-        center: Rotation center (x, y) in image coordinates.
-    
-    Usage:
-        These parameters enable **inverse transformations** to map augmented
-        predictions back to the original image space for averaging.
-    """
-    rotation_angle: float = 0.0
-    scale: float = 1.0
-    horizontal_flip: bool = False
-    vertical_flip: bool = False
-    center: Optional[Tuple[float, float]] = None
-    
-    def to_matrix(self) -> npt.NDArray[np.float32]:
-        """
-        Construct 3×3 affine transformation matrix.
-        
-        Order of operations: Scale → Rotate → Flip → Translate
-        """
-        ...
-    
-    def inverse_matrix(self) -> npt.NDArray[np.float32]:
-        """
-        Compute inverse transformation for mapping predictions back.
-        
-        Critical for TTA: We apply T to images, then T⁻¹ to predictions.
-        """
-        ...
-
-
 
 
 @dataclass

@@ -895,50 +895,6 @@ def _assign_components_to_kp(
     return assignments
 
 
-def _gmm_to_grid_polylines(
-    means: npt.NDArray,
-    covs: npt.NDArray,
-    assignments: npt.NDArray,
-    n_kp: int,
-    hm_w: int,
-    hm_h: int,
-    rects: List[Dict[str, float]],
-    grid_w: int,
-    grid_h: int,
-    fo: Any,
-) -> List[Any]:
-    """Map concatenated GMM ellipses onto the grid as ``fo.Polyline``."""
-    polylines: List[Any] = []
-
-    for j in range(len(means)):
-        k = int(assignments[j])
-        if k >= n_kp or k >= len(rects):
-            continue
-
-        verts = _ellipse_vertices(means[j], covs[j])
-        if len(verts) == 0:
-            continue
-
-        rect = rects[k]
-        mapped: List[Tuple[float, float]] = []
-        for x_hm, y_hm in verts:
-            gx = rect["x0"] + (float(x_hm) / hm_w) * rect["w"]
-            gy = rect["y0"] + (float(y_hm) / hm_h) * rect["h"]
-            mapped.append((
-                float(np.clip(gx / grid_w, 0.0, 1.0)),
-                float(np.clip(gy / grid_h, 0.0, 1.0)),
-            ))
-        polylines.append(
-            fo.Polyline(
-                points=[mapped],
-                closed=True,
-                filled=False,
-                label=COCO_KP_NAMES[k],
-            )
-        )
-    return polylines
-
-
 def _legacy_gmm_to_grid_overlays(
     means: npt.NDArray,
     covs: npt.NDArray,
@@ -1384,23 +1340,6 @@ def _nested_array(d: Dict, *keys: str) -> Optional[npt.NDArray]:
             return None
         obj = obj.get(k)
     return obj if isinstance(obj, np.ndarray) else None
-
-
-def _to_fo_keypoint(
-    coords: npt.NDArray,
-    img_w: int,
-    img_h: int,
-    fo: Any,
-) -> Any:
-    """``(N, 2|3)`` array → ``fiftyone.Keypoint`` (normalised to ``[0,1]``)."""
-    pts = [
-        (
-            float(np.clip(row[0] / img_w, 0.0, 1.0)),
-            float(np.clip(row[1] / img_h, 0.0, 1.0)),
-        )
-        for row in coords
-    ]
-    return fo.Keypoint(points=pts)
 
 
 _VIS_LABELS = {0: "not_labeled", 1: "occluded", 2: "visible"}

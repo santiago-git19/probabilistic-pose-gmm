@@ -23,14 +23,13 @@ References:
     - MPII Pose: http://human-pose.mpi-inf.mpg.de/
 """
 
-from typing import Optional, Dict, List, Union, Any
+from typing import Optional, Dict, List, Any
 
 import numpy as np
 import numpy.typing as npt
-from scipy import stats
 import scipy.linalg
 
-from .types import RefinedKeypoint, PoseEstimationResult
+from .types import RefinedKeypoint
 
 
 # COCO keypoint sigmas (17 keypoints: nose, eyes, ears, shoulders, elbows, 
@@ -802,154 +801,4 @@ def compute_pck(
     
     return float(pck)
 
-
-def compute_pck_auc(
-    predicted: List[RefinedKeypoint],
-    ground_truth: npt.NDArray[np.float32],
-    thresholds: Optional[npt.NDArray[np.float32]] = None
-) -> float:
-    """
-    Compute Area Under the PCK curve (PCK-AUC or AUC metric).
-    
-    Mathematical Definition:
-    -----------------------
-    Integrate PCK over a range of thresholds:
-    
-        AUC = ∫₀^{α_max} PCK(α) dα
-    
-    Discretized as:
-        AUC ≈ (1/N) Σᵢ PCK(αᵢ)
-    
-    Why AUC?
-        - Single-number summary robust to threshold choice
-        - Captures full accuracy vs. tolerance trade-off
-        - More informative than PCK at a single threshold
-    
-    Args:
-        predicted: List of predicted keypoints.
-        ground_truth: Array of shape (num_keypoints, 3).
-        thresholds: Array of α values (e.g., np.linspace(0, 0.5, 50)).
-                   If None, defaults to [0.0, 0.05, ..., 0.5].
-    
-    Returns:
-        AUC score (higher is better, max = 1.0).
-    
-    Typical Ranges:
-        - State-of-the-art models: AUC > 0.6 on COCO
-        - Good performance: AUC > 0.5
-        - Random baseline: AUC ≈ 0.0
-    """
-    if thresholds is None:
-        thresholds = np.linspace(0.0, 0.5, 50)
-    
-    pck_values = []
-    for thresh in thresholds:
-        pck = compute_pck(predicted, ground_truth, threshold=thresh)
-        pck_values.append(pck)
-    
-    auc = np.mean(pck_values)
-    return float(auc)
-
-
-def compute_nme(
-    predicted: List[RefinedKeypoint],
-    ground_truth: npt.NDArray[np.float32],
-    normalize: str = "interocular"
-) -> float:
-    """
-    Compute Normalized Mean Error (NME) for facial landmark evaluation.
-    
-    Definition:
-    ----------
-    Mean Euclidean error normalized by face size:
-    
-        NME = (1/K) Σᵢ ||pᵢ - gᵢ|| / d
-    
-    Where d is the normalizing distance (interocular distance, face bbox diagonal).
-    
-    Args:
-        predicted: List of predicted landmarks.
-        ground_truth: Array of shape (num_keypoints, 3).
-        normalize: "interocular" (eye center distance) or "bbox" (face box diagonal).
-    
-    Returns:
-        NME percentage (lower is better). Typical threshold: NME < 8% is good.
-    
-    Usage:
-        Primary metric for face alignment (300W, WFLW, COFW datasets).
-    """
-    pred_coords = np.array([[kp.x, kp.y] for kp in predicted], dtype=np.float32)
-    gt_coords = ground_truth[:, :2].astype(np.float32)
-    visible = ground_truth[:, 2].astype(np.int32)
-    
-    visible_mask = visible > 0
-    if not np.any(visible_mask):
-        return float('inf')
-    
-    # Compute normalizing distance
-    if normalize == "interocular":
-        # Assume eyes are keypoints 1 and 2 (or 0 and 1)
-        if len(gt_coords) >= 2:
-            eye_distance = np.linalg.norm(gt_coords[0] - gt_coords[1])
-        else:
-            eye_distance = 1.0  # Fallback
-    elif normalize == "bbox":
-        eye_distance = np.linalg.norm(np.max(gt_coords, axis=0) - np.min(gt_coords, axis=0))
-    else:
-        raise ValueError(f"Unknown normalization: {normalize}")
-    
-    # Compute distances
-    distances = compute_l2_distance(pred_coords, gt_coords)
-    
-    # Normalized mean error
-    nme = np.mean(distances[visible_mask]) / eye_distance
-    
-    return float(nme * 100)  # Return as percentage
-
-
-def compute_uncertainty_calibration(
-    predictions: List[PoseEstimationResult],
-    ground_truths: List[npt.NDArray[np.float32]],
-    num_bins: int = 10
-) -> Dict[str, float]:
-    """
-    Evaluate calibration of uncertainty estimates (Expected Calibration Error).
-    
-    Motivation:
-    ----------
-    Our pipeline produces covariance matrices (σ) as uncertainty measures.
-    We want to verify that predicted uncertainty correlates with actual error.
-    
-    Expected Calibration Error (ECE):
-        ECE = Σⱼ (nⱼ/n) |acc(Bⱼ) - conf(Bⱼ)|
-    
-    Where predictions are binned by confidence, and we check if empirical
-    accuracy matches the predicted confidence.
-    
-    Args:
-        predictions: List of PoseEstimationResult with uncertainty info.
-        ground_truths: List of ground truth arrays.
-        num_bins: Number of bins for confidence discretization.
-    
-    Returns:
-        Dictionary with:
-            - "ece": Expected Calibration Error
-            - "mce": Maximum Calibration Error
-            - "reliability_diagram": Per-bin accuracy vs. confidence
-    
-    Interpretation:
-        - ECE < 0.1: Well-calibrated
-        - ECE > 0.2: Over/under-confident
-    
-    Why This Matters:
-        If our covariance estimates are meaningful, low σ should predict
-        low error, and vice versa. This validates our mixture model approach.
-    """
-    # Placeholder implementation
-    # Full implementation would require detailed analysis of covariance vs error
-    return {
-        "ece": 0.0,
-        "mce": 0.0,
-        "reliability_diagram": {}
-    }
 
