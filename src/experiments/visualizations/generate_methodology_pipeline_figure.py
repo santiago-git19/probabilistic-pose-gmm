@@ -5,16 +5,15 @@ Generates the complete 4-block horizontal workflow diagram for the paper using t
 image, bounding box, and coordinate transformations from generate_all_paper_figures.py
 on Candidate 130 (candidate_130_130.pkl.gz):
 
-1. Block 1 (GPU): Input frame with the exact bounding box from generate_all_paper_figures.py,
-   multi-scale TTA stack views with trailing ellipsis (at the end),
-   frozen backbone, and raw heatmaps with trailing ellipsis (at the end).
-2. Block 2 (CPU): Continuous weighted aggregation with exact paper formulas, emerald green
-   hollow Monte Carlo sampling points, and clear legend explanation.
+1. Block 1 (GPU): Input frame with the exact bounding box, vertically stacked multi-scale
+   views (0.85x, 1.00x, 1.15x) with smooth curved connecting arrows converging into the
+   frozen backbone, and raw heatmaps at the bottom.
+2. Block 2 (CPU): Continuous weighted aggregation in clean standardized black LaTeX formulas
+   on tinted background, emerald green hollow Monte Carlo sampling points, and bilingual/bicolor legend.
 3. Block 3 (CPU): Dual hypothesis EM fitting (K=1 vs K=2) with dynamic component weights,
-   vertically staggered labels (blue at bottom, red at top), purple uniform absorption
-   representation reflecting pi_uniform, and exact Total Variance uncertainty metrics.
-4. Block 4 (CPU): Kinematic MRF graph decoding with R_Knee anchor, candidate pruning,
-   and calibrated pose with covariance ellipses on the limbs.
+   and 4 tinted cards with crimson headers and black formulas for causal algorithmic flow.
+4. Block 4 (CPU): Kinematic MRF graph decoding with global MAP tree inference (without Eq 9),
+   clean black mathematical typography on tinted background, and calibrated kinematic tree graph overlay.
 
 Usage:
     poetry run python src/experiments/visualizations/generate_methodology_pipeline_figure.py
@@ -168,7 +167,6 @@ def load_candidate_130_from_figures_pipeline(pkt_path: Path) -> Dict[str, Any]:
     probs_k2 = gmm_k2.predict_proba(samples_kp) # (N, 3)
 
     # 7. Compute Calibrated Covariance (Sigma_final) and Adaptive Uncertainty Metrics
-    # EXACTLY mirroring runner.py, evaluate_uncertainty.py and optimize_adaptive_uncertainty.py
     from pose_uncertainty.utils.metrics import compute_calibrated_covariance, COCO_SIGMAS
 
     m_hm = np.array([c.mean for c in gmm_k2.components_], dtype=np.float32)
@@ -292,7 +290,7 @@ def render_methodology_pipeline_figure(
     data: Dict[str, Any],
     out_dir: Path,
 ) -> None:
-    """Build the complete 4-block horizontal workflow diagram using generate_all_paper_figures.py data."""
+    """Build the updated 4-block horizontal workflow diagram (Figure 2 Style)."""
     plt.rcParams["font.family"] = "sans-serif"
     plt.rcParams["font.sans-serif"] = ["DejaVu Sans", "Helvetica", "Arial"]
     plt.rcParams["mathtext.fontset"] = "cm"
@@ -356,95 +354,127 @@ def render_methodology_pipeline_figure(
     bx, by, bw, bh = data["bbox"]
 
     # =========================================================================
-    # BLOCK 1: Stochastic TTA & Neural Forward (0.5x Low-Res)
+    # BLOCK 1: Stochastic TTA & Forward (Stacked Multi-Scale Views + Curved Arrows)
     # =========================================================================
-    # 1.1 Input Degraded Image with Bounding Box (Centered in top half)
-    ax_b1_in = fig.add_axes([0.022, 0.43, 0.088, 0.33])
-    ax_b1_in.imshow(crop_img)
-    rect = Rectangle((bx - x_min, by - y_min), bw, bh, linewidth=1.1, edgecolor="#00E5FF", facecolor="none", linestyle="--")
-    ax_b1_in.add_patch(rect)
-    ax_b1_in.set_title("Input Frame ($I$)", fontsize=5.0, fontweight="bold", pad=2)
-    ax_b1_in.axis("off")
+    # 1.1 Vertical Stack of 3 Multi-Scale Ingestion Crops
+    # Position: Left column inside Card 1 (x: ~0.025, w: ~0.100)
+    w_stack = 0.096
+    h_stack = 0.122
+    x_stack = 0.025
 
-    # 1.2 Multi-Scale Views Stack with Trailing Vertical Ellipsis ONLY AT THE END
-    # Top view: 0.85x
-    ax_s0 = fig.add_axes([0.134, 0.67, 0.040, 0.090])
-    scaled_0 = cv2.resize(crop_img, (0, 0), fx=0.85, fy=0.85)
-    ax_s0.imshow(scaled_0)
-    ax_s0.text(0.5, -0.22, "0.85x", transform=ax_s0.transAxes, fontsize=4.4, fontweight="bold", ha="center", va="top")
+    # Top Crop: Input Frame (I) with exact cyan bounding box enclosing the target player
+    y_s0 = 0.690
+    ax_s0 = fig.add_axes([x_stack, y_s0, w_stack, h_stack])
+    ax_s0.imshow(crop_img)
+    rect = Rectangle(
+        (bx - x_min, by - y_min), bw, bh,
+        linewidth=1.2, edgecolor="#00E5FF", facecolor="none", linestyle="--"
+    )
+    ax_s0.add_patch(rect)
+    ax_s0.set_xlim(0, crop_img.shape[1])
+    ax_s0.set_ylim(crop_img.shape[0], 0)
+    ax_s0.set_title(r"$\mathbf{Input\ Frame\ (I)}$", fontsize=5.0, pad=2)
+    ax_s0.text(0.5, -0.20, "0.85x", transform=ax_s0.transAxes, fontsize=4.6, fontweight="bold", ha="center", va="top")
     ax_s0.axis("off")
 
-    # Middle view: 1.00x
-    ax_s1 = fig.add_axes([0.134, 0.54, 0.040, 0.090])
+    # Middle Crop: 1.00x
+    y_s1 = 0.510
+    ax_s1 = fig.add_axes([x_stack, y_s1, w_stack, h_stack])
     ax_s1.imshow(crop_img)
-    ax_s1.text(0.5, -0.22, "1.00x", transform=ax_s1.transAxes, fontsize=4.4, fontweight="bold", ha="center", va="top")
+    ax_s1.text(0.5, -0.20, "1.00x", transform=ax_s1.transAxes, fontsize=4.6, fontweight="bold", ha="center", va="top")
     ax_s1.axis("off")
 
-    # Bottom view: 1.15x
-    ax_s2 = fig.add_axes([0.134, 0.41, 0.040, 0.090])
+    # Bottom Crop: 1.15x
+    y_s2 = 0.330
+    ax_s2 = fig.add_axes([x_stack, y_s2, w_stack, h_stack])
     scaled_2 = cv2.resize(crop_img, (0, 0), fx=1.15, fy=1.15)
     ax_s2.imshow(scaled_2)
-    ax_s2.text(0.5, -0.22, "1.15x", transform=ax_s2.transAxes, fontsize=4.4, fontweight="bold", ha="center", va="top")
+    ax_s2.text(0.5, -0.20, "1.15x", transform=ax_s2.transAxes, fontsize=4.6, fontweight="bold", ha="center", va="top")
     ax_s2.axis("off")
 
-    # Trailing Vertical Ellipsis ONLY AT THE END (below 1.15x)
-    ax_main.text(15.4, 35.5, r"$\mathbf{\vdots}$", fontsize=7.5, color=PALETTE["b1_gpu"], ha="center", va="center", fontweight="bold")
-
-    # Connecting arrow to Backbone
-    ax_main.annotate(
-        "", xy=(19.2, 50.0), xytext=(17.5, 55.0),
-        arrowprops=dict(arrowstyle="-|>", color=PALETTE["b1_gpu"], lw=0.9, mutation_scale=6)
-    )
-
-    # 1.3 Backbone Block Badge
+    # 1.2 Backbone Box (Pill) centered vertically on the inter-column flow arrow (y = 50.0)
+    bb_x = 18.0
+    bb_w = 4.4
+    bb_h = 46.0
+    bb_y = 50.0 - bb_h / 2.0  # 27.0 (centered on y = 50.0)
     bb_box = FancyBboxPatch(
-        (19.0, 32.0), 4.2, 35.0,
+        (bb_x, bb_y), bb_w, bb_h,
         boxstyle="Round,pad=0.1,rounding_size=1.0",
         facecolor="#E3F2FD", edgecolor=PALETTE["b1_gpu"], linewidth=1.0, zorder=2
     )
     ax_main.add_patch(bb_box)
-    ax_main.text(21.1, 49.5, "CNN / ViT Backbone\n(Frozen HRNet / ViTPose)", fontsize=4.8, fontweight="bold", color=PALETTE["b1_gpu"], ha="center", va="center", rotation=90, zorder=3)
+    ax_main.text(
+        bb_x + bb_w / 2.0, 50.0,
+        "CNN / ViT Backbone\n(Frozen HRNet / ViTPose)",
+        fontsize=4.8, fontweight="bold", color=PALETTE["b1_gpu"],
+        ha="center", va="center", rotation=90, zorder=3
+    )
 
-    # 1.4 Raw Multi-Scale Heatmaps for Right Ankle with Trailing Ellipsis ONLY AT THE END
+    # 1.3 Smooth Curved Arrows from Stack to Backbone (converging toward centered backbone)
+    x_arrow_start = (x_stack + w_stack) * 100 + 0.5  # ~12.6
+    y_arr_0 = (y_s0 + h_stack / 2.0) * 100           # ~75.1
+    y_arr_1 = (y_s1 + h_stack / 2.0) * 100           # ~57.1
+    y_arr_2 = (y_s2 + h_stack / 2.0) * 100           # ~39.1
+
+    # Curved top arrow (smooth arc curving down into upper portion of backbone)
+    arr_top = FancyArrowPatch(
+        (x_arrow_start, y_arr_0 - 1.0), (bb_x - 0.1, 62.5),
+        connectionstyle="arc3,rad=-0.24",
+        arrowstyle="-|>", color=PALETTE["b1_gpu"], lw=1.1, mutation_scale=7.5, zorder=4
+    )
+    ax_main.add_patch(arr_top)
+
+    # Middle arrow (gentle downward arc into middle portion of backbone)
+    arr_mid = FancyArrowPatch(
+        (x_arrow_start, y_arr_1 - 0.5), (bb_x - 0.1, 51.5),
+        connectionstyle="arc3,rad=-0.14",
+        arrowstyle="-|>", color=PALETTE["b1_gpu"], lw=1.1, mutation_scale=7.5, zorder=4
+    )
+    ax_main.add_patch(arr_mid)
+
+    # Curved bottom arrow (smooth upward arc into lower portion of backbone)
+    arr_bot = FancyArrowPatch(
+        (x_arrow_start, y_arr_2 + 0.5), (bb_x - 0.1, 40.5),
+        connectionstyle="arc3,rad=0.20",
+        arrowstyle="-|>", color=PALETTE["b1_gpu"], lw=1.1, mutation_scale=7.5, zorder=4
+    )
+    ax_main.add_patch(arr_bot)
+
+    # 1.4 Raw Multi-Scale Heatmaps for Right Ankle at the bottom of Block 1
     raw_hm_0 = data["raw_hm_0"]
     raw_hm_4 = data["raw_hm_4"]
     raw_hm_8 = data["raw_hm_8"]
 
     # Heatmap 0.85
-    ax_hm_0 = fig.add_axes([0.024, 0.095, 0.052, 0.145])
+    ax_hm_0 = fig.add_axes([0.024, 0.082, 0.052, 0.138])
     ax_hm_0.imshow(raw_hm_0, cmap="inferno")
     ax_hm_0.set_title(r"$\mathbf{H}_{0.85}^{\mathrm{R\text{-}Ank}}$", fontsize=5.0, pad=2)
     ax_hm_0.axis("off")
 
     # Heatmap 1.00
-    ax_hm_1 = fig.add_axes([0.082, 0.095, 0.052, 0.145])
+    ax_hm_1 = fig.add_axes([0.082, 0.082, 0.052, 0.138])
     ax_hm_1.imshow(raw_hm_4, cmap="inferno")
     ax_hm_1.set_title(r"$\mathbf{H}_{1.00}^{\mathrm{R\text{-}Ank}}$", fontsize=5.0, pad=2)
     ax_hm_1.axis("off")
 
     # Heatmap 1.15
-    ax_hm_2 = fig.add_axes([0.140, 0.095, 0.052, 0.145])
+    ax_hm_2 = fig.add_axes([0.140, 0.082, 0.052, 0.138])
     ax_hm_2.imshow(raw_hm_8, cmap="inferno")
     ax_hm_2.set_title(r"$\mathbf{H}_{1.15}^{\mathrm{R\text{-}Ank}}$", fontsize=5.0, pad=2)
     ax_hm_2.axis("off")
 
-    # Trailing Horizontal Ellipsis ONLY AT THE END (to the right of H_1.15, centered vertically)
-    hm_center_y = (0.095 + 0.145 / 2) * 100
+    # Trailing Horizontal Ellipsis to the right of H_1.15
+    hm_center_y = (0.082 + 0.138 / 2) * 100
     ax_main.text(20.4, hm_center_y, r"$\mathbf{\dots}$", fontsize=8.0, color=PALETTE["b1_gpu"], ha="center", va="center", fontweight="bold")
 
     # TTA Subtitle Note placed directly below heatmaps
-    ax_main.text(10.8, 7.5, r"$s \in \{0.85, \dots, 1.15\} \times \{\mathrm{Orig}, \mathrm{Flip}\}$", fontsize=4.4, color=PALETTE["b1_gpu"], ha="center", va="center")
+    ax_main.text(10.8, 5.8, r"$s \in [0.85, \dots, 1.15] \times \{\mathrm{Orig}, \mathrm{Flip}\}$", fontsize=4.4, color=PALETTE["b1_gpu"], ha="center", va="center")
 
     # =========================================================================
     # BLOCK 2: Continuous Aggregation & Rejection Sampling
     # =========================================================================
-    # Arrow B1 -> B2
-    ax_main.annotate(
-        "", xy=(26.2, 50.0), xytext=(23.5, 50.0),
-        arrowprops=dict(arrowstyle="-|>", color=PALETTE["b2_agg"], lw=1.2, mutation_scale=8)
-    )
 
-    # 2.1 Rigorous Mathematical Formula Box (Directly from Paper Equations - Expanded)
+    # 2.1 Rigorous Mathematical Formula Box (Exact Original Paper Equations on Tinted Background)
     formula_box = FancyBboxPatch(
         (25.9, 49.5), 23.0, 36.5,
         boxstyle="Round,pad=0.2,rounding_size=1.0",
@@ -460,20 +490,16 @@ def render_methodology_pipeline_figure(
     ax_main.text(
         37.4, 67.8,
         formula_text,
-        fontsize=5.2, color="#1B5E20", ha="center", va="center", zorder=3
+        fontsize=5.2, color="#1A1A1A", ha="center", va="center", zorder=3
     )
 
-    # 2.2 Continuous Aggregated Heatmap + 2.3 Emerald Green Hollow MC Points (R_Ankle)
+    # 2.2 Continuous Aggregated Heatmap + Hollow MC Points (Kept identical as requested)
     agg_hm = data["agg_hm"]
     samples_kp = data["samples_kp"]
     samples_viz = data.get("samples_viz", samples_kp)
 
-    # Align horizontally inside Card 2 (width 0.224, centered at 0.374)
-    # Tightly zoom into the high-probability region encompassing all 3 Gaussian modes (x: [3, 39], y: [33, 56])
-    # Lowered to 0.100 to provide balanced breathing room below formula box and closer proximity to subtitle text
     ax_b2_hm = fig.add_axes([0.262, 0.100, 0.224, 0.300])
     ax_b2_hm.imshow(agg_hm, cmap="inferno")
-    # Crisp hollow circles in emerald green matching test1_s1.8_a0.25_lw0.25
     ax_b2_hm.scatter(
         samples_viz[:, 0], samples_viz[:, 1],
         s=1.8, facecolors="none", edgecolors="#00E676", linewidths=0.25, alpha=0.25, zorder=4
@@ -483,23 +509,23 @@ def render_methodology_pipeline_figure(
     ax_b2_hm.set_title(r"$\mathbf{P}_{\mathrm{R\_Ankle}}(\mathbf{x})$ + MC Samples", fontsize=5.3, fontweight="bold", pad=3.0)
     ax_b2_hm.axis("off")
 
-    # Explanatory subtitle inside green card clarifying green hollow points as Monte Carlo samples
+    # 2.3 Explanatory Subtitle with Green Circles badge in green, and description in black
     ax_main.text(
-        37.4, 5.8,
-        r"$\circ\ \mathbf{Green\ circles:}\ \text{Sub-pixel MC Samples } \tilde{\mathbf{x}}_m \sim \mathbf{P}_k$",
-        fontsize=4.5, fontweight="bold", color="#1B5E20", ha="center", va="center", zorder=3
+        34.2, 5.8,
+        r"$\circ\ \mathbf{Green\ circles:}$",
+        fontsize=4.6, fontweight="bold", color=PALETTE["b2_agg"], ha="right", va="center", zorder=3
+    )
+    ax_main.text(
+        34.5, 5.8,
+        r"$\text{Sub-pixel MC Samples } \tilde{\mathbf{x}}_m \sim \mathbf{P}_k$",
+        fontsize=4.6, color="#1A1A1A", ha="left", va="center", zorder=3
     )
 
     # =========================================================================
     # BLOCK 3: Probabilistic Mixture EM Fitting + BIC Selection
     # =========================================================================
-    # Arrow B2 -> B3
-    ax_main.annotate(
-        "", xy=(50.8, 50.0), xytext=(48.0, 50.0),
-        arrowprops=dict(arrowstyle="-|>", color=PALETTE["b3_gmm"], lw=1.2, mutation_scale=8)
-    )
 
-    # 3.1 Dual Hypothesis Rendering (K=1 vs K=2)
+    # 3.1 Dual Hypothesis Rendering (K=1 vs K=2) - Heatmaps & Fits preserved
     gmm_k1 = data["gmm_k1"]
     bic_1 = data["bic_1"]
     probs_k1 = data["probs_k1"]
@@ -511,22 +537,19 @@ def render_methodology_pipeline_figure(
     pi_u_k1 = gmm_k1.uniform_weight_
     pi_u_k2 = gmm_k2.uniform_weight_
 
-    # TOP: K=1 Model Fit with Purple Uniform Background Absorption
+    # TOP: K=1 Model Fit
     ax_k1 = fig.add_axes([0.518, 0.52, 0.098, 0.30])
     ax_k1.imshow(agg_hm, cmap="magma")
     
-    # Render purple uniform absorption wash proportional to pi_uniform (37.0% in K=1)
     if pi_u_k1 > 0.01:
-        # Purple uniform tint overlay representing the trash bin absorbing non-structural/unexplained mass
         purple_wash = np.zeros((*agg_hm.shape, 4), dtype=np.float32)
-        purple_wash[..., 0] = 0.73  # R
-        purple_wash[..., 1] = 0.25  # G
-        purple_wash[..., 2] = 0.98  # B
-        purple_wash[..., 3] = float(np.clip(pi_u_k1 * 0.40, 0.0, 0.35)) # Alpha proportional to pi_uniform
+        purple_wash[..., 0] = 0.73
+        purple_wash[..., 1] = 0.25
+        purple_wash[..., 2] = 0.98
+        purple_wash[..., 3] = float(np.clip(pi_u_k1 * 0.40, 0.0, 0.35))
         ax_k1.imshow(purple_wash, zorder=2)
         
-        # Highlight noise samples absorbed by uniform component in magenta/purple
-        labels_k1 = np.argmax(probs_k1, axis=1) # 0: Gaussian, 1: Uniform
+        labels_k1 = np.argmax(probs_k1, axis=1)
         noise_mask = labels_k1 == 1
         if np.any(noise_mask):
             ax_k1.scatter(
@@ -542,20 +565,17 @@ def render_methodology_pipeline_figure(
         ang1 = np.degrees(np.arctan2(v1[1, 0], v1[0, 0]))
         ell_k1 = Ellipse(m1, width=2*np.sqrt(max(w1[0], 0.5))*2.2, height=2*np.sqrt(max(w1[1], 0.5))*2.2, angle=ang1, edgecolor="#00E676", facecolor="none", lw=0.75, linestyle="--")
         ax_k1.add_patch(ell_k1)
-        # Small centroid dot
         ax_k1.scatter([m1[0]], [m1[1]], color="#00E676", s=0.6, zorder=5)
-        # Dynamic Weight label (Gaussian mode + Uniform sink) cleanly positioned above the ellipse
         ax_k1.text(m1[0], m1[1] - 7.0, rf"$\pi_1={c1.weight:.2f},\ \pi_u={pi_u_k1:.2f}$", fontsize=3.4, color="#00E676", ha="center", va="bottom", fontweight="bold")
     
     ax_k1.set_title(r"$K=1$ (Unimodal)", fontsize=5.2, fontweight="bold", pad=1)
     ax_k1.text(0.5, -0.17, f"$\\mathbf{{BIC}}_1 = {bic_1:.1f}$", transform=ax_k1.transAxes, fontsize=4.6, fontweight="bold", ha="center", color=PALETTE["b3_gmm"])
     ax_k1.axis("off")
 
-    # BOTTOM: K=2 Model Fit (Bimodal with Vertically Staggered Mode Weights)
+    # BOTTOM: K=2 Model Fit
     ax_k2 = fig.add_axes([0.518, 0.10, 0.098, 0.30])
     ax_k2.imshow(agg_hm, cmap="magma")
     
-    # In K=2, pi_uniform is ~0.0% so almost zero purple wash
     if pi_u_k2 > 0.01:
         purple_wash2 = np.zeros((*agg_hm.shape, 4), dtype=np.float32)
         purple_wash2[..., 0] = 0.73
@@ -566,32 +586,27 @@ def render_methodology_pipeline_figure(
 
     comps = gmm_k2.components_
     if len(comps) >= 2:
-        # Sort modes: Mode 1 on ball (Cyan, x ~ 10) vs Mode 2 on opponent (Red, x ~ 24)
         modes_sorted = sorted(comps[:2], key=lambda c: c.mean[0])
         true_comp, swap_comp = modes_sorted[0], modes_sorted[1]
         
-        # 1. True candidate on ball (Cyan)
+        # True candidate on ball (Cyan)
         wt, vt = np.linalg.eigh(true_comp.covariance[:2, :2])
         ang_t = np.degrees(np.arctan2(vt[1, 0], vt[0, 0]))
         ell_true = Ellipse(true_comp.mean, width=2*np.sqrt(max(wt[0], 0.5))*2.2, height=2*np.sqrt(max(wt[1], 0.5))*2.2, angle=ang_t, edgecolor="#00E5FF", facecolor="none", lw=0.75)
         ax_k2.add_patch(ell_true)
-        # Small centroid dot
         ax_k2.scatter([true_comp.mean[0]], [true_comp.mean[1]], color="#00E5FF", s=0.6, zorder=5)
-        # BLUE WEIGHT AT THE BOTTOM (below the ellipse, avoiding any overlap)
         ax_k2.text(
             true_comp.mean[0], true_comp.mean[1] + 6.8,
             f"$\\pi_1={true_comp.weight:.2f}$",
             fontsize=3.8, color="#00E5FF", ha="center", va="top", fontweight="bold"
         )
 
-        # 2. Swapped candidate on opponent (Red)
+        # Swapped candidate on opponent (Red)
         ws, vs = np.linalg.eigh(swap_comp.covariance[:2, :2])
         ang_s = np.degrees(np.arctan2(vs[1, 0], vs[0, 0]))
         ell_swap = Ellipse(swap_comp.mean, width=2*np.sqrt(max(ws[0], 0.5))*2.2, height=2*np.sqrt(max(ws[1], 0.5))*2.2, angle=ang_s, edgecolor="#FF1744", facecolor="none", lw=0.75)
         ax_k2.add_patch(ell_swap)
-        # Small centroid dot
         ax_k2.scatter([swap_comp.mean[0]], [swap_comp.mean[1]], color="#FF1744", s=0.6, zorder=5)
-        # RED WEIGHT AT THE TOP (above the ellipse)
         ax_k2.text(
             swap_comp.mean[0], swap_comp.mean[1] - 6.8,
             f"$\\pi_2={swap_comp.weight:.2f}$",
@@ -602,9 +617,8 @@ def render_methodology_pipeline_figure(
     ax_k2.text(0.5, -0.17, f"$\\mathbf{{BIC}}_2 = \\mathbf{{{bic_2:.1f}}}$", transform=ax_k2.transAxes, fontsize=4.6, fontweight="bold", ha="center", color=PALETTE["b3_gmm"])
     ax_k2.axis("off")
 
-    # 3.2 Causal Algorithmic Flow (4 Unified Steps in Option 3 Style)
+    # 3.2 Causal Algorithmic Flow (Tinted Cards with Crimson Headers and Exact Original Notation)
     det_final = data["det_sigma_final"]
-    u_gmm_val = data["u_gmm"]
     u_base_val = data["u_base"]
     u_adapt_val = data["u_adapt"]
 
@@ -615,22 +629,21 @@ def render_methodology_pipeline_figure(
     b_h = 15.0
     gap = 3.8
 
-    # Balanced vertical coordinates
     y1 = 68.8
     y2 = y1 - b_h - gap  # 50.0
     y3 = y2 - b_h - gap  # 31.2
     y4 = y3 - (b_h + 0.5) - gap  # 11.9
     b_h4 = b_h + 0.5     # 15.5
 
-    wine_text = "#880E4F"
-    dark_text = "#212121"
-    muted_text = "#616161"
+    wine_header = "#880E4F"
+    dark_math = "#1A1A1A"
+    muted_note = "#555555"
 
-    # Box 1: EM Mixture Fitting (GMM + Uniform sink)
+    # Box 1: EM Mixture Fitting
     box1 = FancyBboxPatch((bx, y1), bw, b_h, boxstyle="Round,pad=0.1,rounding_size=0.8", facecolor="#FFF5F7", edgecolor=PALETTE["b3_gmm"], linewidth=0.65, zorder=2)
     ax_main.add_patch(box1)
-    ax_main.text(cx, y1 + 9.8, "EM Mixture Fitting", fontsize=4.5, fontweight="bold", color=wine_text, ha="center", va="center", zorder=3)
-    ax_main.text(cx, y1 + 4.8, r"$p_k(\mathbf{x}) = \sum_{j=1}^K \pi_j \mathcal{N}_j + \pi_u \mathcal{U}$", fontsize=3.9, color=dark_text, ha="center", va="center", zorder=3)
+    ax_main.text(cx, y1 + 9.8, "EM Mixture Fitting", fontsize=4.5, fontweight="bold", color=wine_header, ha="center", va="center", zorder=3)
+    ax_main.text(cx, y1 + 4.8, r"$p_k(\mathbf{x}) = \sum_{j=1}^K \pi_j \mathcal{N}_j + \pi_u \mathcal{U}$", fontsize=3.9, color=dark_math, ha="center", va="center", zorder=3)
 
     # Arrow 1 -> 2
     arr_prop = dict(arrowstyle="-|>", color=PALETTE["b3_gmm"], lw=0.9, mutation_scale=6)
@@ -639,9 +652,9 @@ def render_methodology_pipeline_figure(
     # Box 2: BIC Model Selection
     box2 = FancyBboxPatch((bx, y2), bw, b_h, boxstyle="Round,pad=0.1,rounding_size=0.8", facecolor="#FFF5F7", edgecolor=PALETTE["b3_gmm"], linewidth=0.65, zorder=2)
     ax_main.add_patch(box2)
-    ax_main.text(cx, y2 + 11.4, "Model Selection", fontsize=4.5, fontweight="bold", color=wine_text, ha="center", va="center", zorder=3)
-    ax_main.text(cx, y2 + 7.0, r"$\Delta\mathrm{BIC}_{2 \to 1} = -2864.8$", fontsize=4.2, color=dark_text, ha="center", va="center", zorder=3)
-    ax_main.text(cx, y2 + 2.8, r"$\mathbf{K=2\ (Bimodal)}$", fontsize=4.2, color=wine_text, fontweight="bold", ha="center", va="center", zorder=3)
+    ax_main.text(cx, y2 + 11.4, "Model Selection", fontsize=4.5, fontweight="bold", color=wine_header, ha="center", va="center", zorder=3)
+    ax_main.text(cx, y2 + 7.0, r"$\Delta\mathrm{BIC}_{2 \to 1} = -2864.8$", fontsize=4.2, color=dark_math, ha="center", va="center", zorder=3)
+    ax_main.text(cx, y2 + 2.8, r"$\mathbf{K=2\ (Bimodal)}$", fontsize=4.2, color=wine_header, fontweight="bold", ha="center", va="center", zorder=3)
 
     # Arrow 2 -> 3
     ax_main.annotate("", xy=(cx, y3 + b_h), xytext=(cx, y2), arrowprops=arr_prop, zorder=4)
@@ -649,37 +662,32 @@ def render_methodology_pipeline_figure(
     # Box 3: Spatial Dispersion & Base Prob
     box3 = FancyBboxPatch((bx, y3), bw, b_h, boxstyle="Round,pad=0.1,rounding_size=0.8", facecolor="#FFF5F7", edgecolor=PALETTE["b3_gmm"], linewidth=0.65, zorder=2)
     ax_main.add_patch(box3)
-    ax_main.text(cx, y3 + 11.4, "Spatial Dispersion", fontsize=4.5, fontweight="bold", color=wine_text, ha="center", va="center", zorder=3)
-    ax_main.text(cx, y3 + 7.0, rf"$\det(\boldsymbol{{\Sigma}}_{{\text{{final}}}}) = {det_final:.3f}$", fontsize=4.2, color=dark_text, ha="center", va="center", zorder=3)
-    ax_main.text(cx, y3 + 2.8, rf"$U_{{\mathrm{{base}}}} = {u_base_val:.2f} \ (P_{{\mathrm{{base}}}} = 0.67)$", fontsize=3.8, color=muted_text, ha="center", va="center", zorder=3)
+    ax_main.text(cx, y3 + 11.4, "Spatial Dispersion", fontsize=4.5, fontweight="bold", color=wine_header, ha="center", va="center", zorder=3)
+    ax_main.text(cx, y3 + 7.0, rf"$\det(\boldsymbol{{\Sigma}}_{{\text{{final}}}}) = {det_final:.3f}$", fontsize=4.2, color=dark_math, ha="center", va="center", zorder=3)
+    ax_main.text(cx, y3 + 2.8, rf"$U_{{\mathrm{{base}}}} = {u_base_val:.2f} \ (P_{{\mathrm{{base}}}} = 0.67)$", fontsize=3.8, color=muted_note, ha="center", va="center", zorder=3)
 
     # Arrow 3 -> 4
     ax_main.annotate("", xy=(cx, y4 + b_h4), xytext=(cx, y3), arrowprops=arr_prop, zorder=4)
 
-    # Box 4: Adaptive Softmax Fusion (Eq. 16)
+    # Box 4: Adaptive Softmax Fusion
     box4 = FancyBboxPatch((bx, y4), bw, b_h4, boxstyle="Round,pad=0.1,rounding_size=0.8", facecolor="#FFF0F3", edgecolor=PALETTE["b3_gmm"], linewidth=0.85, zorder=2)
     ax_main.add_patch(box4)
-    ax_main.text(cx, y4 + 12.0, "Softmax Fusion", fontsize=4.5, fontweight="bold", color=wine_text, ha="center", va="center", zorder=3)
-    ax_main.text(cx, y4 + 7.5, r"$U_{\mathrm{adapt}} = \mathrm{Softmax}(U_b, U_g)^\top [U_b, U_g]^\top$", fontsize=3.5, color=dark_text, ha="center", va="center", zorder=3)
-    ax_main.text(cx, y4 + 2.8, rf"$\mathbf{{U}}_{{\mathbf{{adapt}}}} = \mathbf{{{u_adapt_val:.2f}}}$", fontsize=5.8, color=wine_text, fontweight="bold", ha="center", va="center", zorder=3)
+    ax_main.text(cx, y4 + 12.0, "Softmax Fusion", fontsize=4.5, fontweight="bold", color=wine_header, ha="center", va="center", zorder=3)
+    ax_main.text(cx, y4 + 7.5, r"$U_{\mathrm{adapt}} = \mathrm{Softmax}(U_b, U_g)^\top [U_b, U_g]^\top$", fontsize=3.5, color=dark_math, ha="center", va="center", zorder=3)
+    ax_main.text(cx, y4 + 2.8, rf"$\mathbf{{U}}_{{\mathbf{{adapt}}}} = \mathbf{{{u_adapt_val:.2f}}}$", fontsize=5.8, color=wine_header, fontweight="bold", ha="center", va="center", zorder=3)
 
     # Subtitle under Box 4
-    ax_main.text(cx, 5.5, r"$\text{Modes } \{\boldsymbol{\mu}_1, \boldsymbol{\mu}_2\} \to \text{MRF}$", fontsize=3.8, color=muted_text, ha="center", va="center")
+    ax_main.text(cx, 5.5, r"$\text{Modes } \{\boldsymbol{\mu}_1, \boldsymbol{\mu}_2\} \to \text{MRF}$", fontsize=3.8, color=muted_note, ha="center", va="center")
 
     # =========================================================================
     # BLOCK 4: Kinematic MRF Graph Decoding & Calibrated Output
     # =========================================================================
-    # Arrow B3 -> B4
-    ax_main.annotate(
-        "", xy=(74.8, 50.0), xytext=(73.7, 50.0),
-        arrowprops=dict(arrowstyle="-|>", color=PALETTE["b4_mrf"], lw=1.2, mutation_scale=8)
-    )
 
-    # 4.0 MRF Tree Formulation & Prior Card (Upper Half)
+    # 4.0 MRF Tree Formulation & Prior Card (Without Eq 9, Exact Original Notation on Tinted Background)
     mrf_formula_box = FancyBboxPatch(
         (75.3, 49.8), 23.2, 36.2,
         boxstyle="Round,pad=0.2,rounding_size=0.8",
-        facecolor="#FFFFFF", edgecolor="#AB47BC", linewidth=0.8, zorder=2
+        facecolor="#F3E5F5", edgecolor="#AB47BC", linewidth=0.8, zorder=2
     )
     ax_main.add_patch(mrf_formula_box)
 
@@ -699,18 +707,18 @@ def render_methodology_pipeline_figure(
     sq_err_mrf = (d_mrf - mu_px)**2
     var_px = sigma_px**2
 
+    # Exact original formulas without Eq 9
     mrf_formula_text = (
-        r"$\mathbf{Global\ MAP\ Tree\ Inference\ (Eq.\ 9):}$" + "\n\n"
+        r"$\mathbf{Global\ MAP\ Tree\ Inference:}$" + "\n\n"
         r"$\mathbf{x}^* = \arg\max_{\mathbf{x}} \sum_{u} \ln \phi_u(x_u) + \sum_{(u, v)} \ln \psi_{uv}(x_u, x_v)$" + "\n\n"
         r"$\mathbf{Unary\ Likelihood:}\quad \ln \phi_u(x_u) = \ln \mathbf{P}_u(x_u)$" + "\n\n"
         r"$\mathbf{Kinematic\ Pairwise:}\quad \ln \psi_{uv} = -\frac{(\|\mathbf{x}_u - \mathbf{x}_v\| - \mu_{uv})^2}{2\sigma_{uv}^2}$" + "\n\n"
         r"$\mathbf{Prior\ (\text{R-Knee} \to \text{R-Ankle}):}$" + "\n"
         f"$\\mu_{{uv}} = {mu_px:.1f}\\mathrm{{px}}, \\quad \\sigma_{{uv}} = {sigma_px:.1f}\\mathrm{{px}} \\quad (\\sigma_{{uv}}^2 = {var_px:.1f}\\mathrm{{px}}^2)$"
     )
-    ax_main.text(86.9, 67.9, mrf_formula_text, fontsize=4.4, color="#4A148C", ha="center", va="center", zorder=3)
+    ax_main.text(86.9, 67.9, mrf_formula_text, fontsize=4.4, color="#1A1A1A", ha="center", va="center", zorder=3)
 
     # 4.1 Lower Main Unified Image (Large Single Crop)
-    # Enlarged to 0.230 x 0.357 to maximize visual presence and eliminate dead space
     ax_crop = fig.add_axes([0.754, 0.045, 0.230, 0.357])
     ax_crop.imshow(crop_img, extent=[x_min, x_max, y_max, y_min])
 
@@ -756,7 +764,6 @@ def render_methodology_pipeline_figure(
     ax_crop.add_patch(arr)
 
     # Ground Truth (Green circle) & MRF Solution (Cyan dot)
-    # Concentric rendering so both are visible when overlapping (GT outer ring, MRF core)
     ax_crop.scatter(
         c_gt[0], c_gt[1], color="#00E676", marker="o", s=52,
         edgecolors="#000000", lw=0.8, zorder=6
@@ -766,12 +773,12 @@ def render_methodology_pipeline_figure(
         edgecolors="#000000", lw=0.6, zorder=7
     )
 
-    # Clip tightly to image boundaries so the wedge does not expand axes
+    # Clip tightly to image boundaries
     ax_crop.set_xlim(x_min, x_max)
     ax_crop.set_ylim(y_max, y_min)
     ax_crop.axis("off")
 
-    # Typography: Pure White Text with Refined Outline (HUD style, slim semibold, crisp math)
+    # Typography: HUD Legend
     stroke = [pe.withStroke(linewidth=0.60, foreground="#0F172A")]
     txt_color = "#FFFFFF"
     font_weight = "semibold"
@@ -783,16 +790,13 @@ def render_methodology_pipeline_figure(
     y_top_base = 11.0
     dy_top = 5.0
 
-    # 1. Anchor (R Knee)
     ax_crop.scatter(x_icon_top, y_top_base, marker="s", color="#FFD600", s=18, edgecolors="black", lw=0.5, zorder=9)
     ax_crop.text(x_txt_top, y_top_base, "Anchor (R Knee)", fontsize=font_size, fontweight=font_weight, color=txt_color, va="center", path_effects=stroke, zorder=9)
 
-    # 2. Prior Band
     rect_patch = patches.Rectangle((x_icon_top - 1.3, y_top_base + dy_top - 1.3), 2.6, 2.6, facecolor="#76FF03", alpha=0.35, edgecolor="#4ADE80", linewidth=0.5, zorder=9)
     ax_crop.add_patch(rect_patch)
     ax_crop.text(x_txt_top, y_top_base + dy_top, "Prior Band μ ± 2σ", fontsize=font_size, fontweight=font_weight, color=txt_color, va="center", path_effects=stroke, zorder=9)
 
-    # 3. Prior Length
     ax_crop.plot([x_icon_top - 1.6, x_icon_top + 1.6], [y_top_base + 2*dy_top, y_top_base + 2*dy_top], color="#76FF03", linestyle="--", lw=1.0, zorder=9)
     ax_crop.text(x_txt_top, y_top_base + 2*dy_top, "Prior Length μ", fontsize=font_size, fontweight=font_weight, color=txt_color, va="center", path_effects=stroke, zorder=9)
 
@@ -802,19 +806,16 @@ def render_methodology_pipeline_figure(
     y_bot_base = 78.0
     dy_bot = 5.0
 
-    # 4. GMM Unary
     ax_crop.scatter(x_icon_bot, y_bot_base, marker="x", color="#FF1744", s=20, lw=1.1, zorder=9)
     ax_crop.text(x_txt_bot, y_bot_base, "GMM Unary", fontsize=font_size, fontweight=font_weight, color=txt_color, va="center", path_effects=stroke, zorder=9)
 
-    # 5. Ground Truth (stacked above MRF Solution)
     ax_crop.scatter(x_icon_bot, y_bot_base + dy_bot, marker="o", color="#00E676", s=18, edgecolors="black", lw=0.5, zorder=9)
     ax_crop.text(x_txt_bot, y_bot_base + dy_bot, "Ground Truth", fontsize=font_size, fontweight=font_weight, color=txt_color, va="center", path_effects=stroke, zorder=9)
 
-    # 6. MRF Solution
     ax_crop.scatter(x_icon_bot, y_bot_base + 2*dy_bot, marker="o", color="#00E5FF", s=16, edgecolors="black", lw=0.5, zorder=9)
     ax_crop.text(x_txt_bot, y_bot_base + 2*dy_bot, "MRF Solution", fontsize=font_size, fontweight=font_weight, color=txt_color, va="center", path_effects=stroke, zorder=9)
 
-    ax_crop.set_title("Kinematic Prior Band & Swap Correction", fontsize=5.3, fontweight="bold", color="#4A148C", pad=4)
+    ax_crop.set_title("Kinematic Prior Band & Swap Correction", fontsize=5.3, fontweight="bold", color="#1A1A1A", pad=4)
 
     # =========================================================================
     # Export Vectorial PDF & 300 DPI PNG
@@ -875,7 +876,7 @@ def main() -> None:
     logger.info("Loading Candidate 130 using exact generate_all_paper_figures.py logic...")
     pipeline_data = load_candidate_130_from_figures_pipeline(pkt_path)
     
-    logger.info("Rendering publication-grade methodology pipeline figure (White HUD with fine contour)...")
+    logger.info("Rendering publication-grade methodology pipeline figure...")
     render_methodology_pipeline_figure(pipeline_data, out_dir)
     logger.info("Methodology Pipeline figure successfully generated!")
 
