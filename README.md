@@ -1,5 +1,6 @@
 # Human Pose Estimation by Probabilistic Mixtures of Gaussian and Uniform Distributions
 
+[![arXiv](https://img.shields.io/badge/arXiv-2610.14093-b31b1b.svg)](http://arxiv.org/abs/2610.14093)
 [![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/)
 [![License: Academic Non-Commercial](https://img.shields.io/badge/License-Academic%20Non--Commercial-blue.svg)](LICENSE)
 [![PyTorch 2.1+](https://img.shields.io/badge/PyTorch-2.1.2-red.svg)](https://pytorch.org/)
@@ -7,6 +8,8 @@
 [![Hydra 1.3](https://img.shields.io/badge/Config-Hydra%201.3-89b4fa.svg)](https://hydra.cc/)
 [![Poetry](https://img.shields.io/badge/Packaging-Poetry-blueviolet.svg)](https://python-poetry.org/)
 [![Code Style: Black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+
+> **Preprint**: [arXiv:2610.14093 [cs.CV]](http://arxiv.org/abs/2610.14093)
 
 ---
 
@@ -671,15 +674,17 @@ Standard multi-view pose estimation models project 2D heatmaps into massive 3D v
 
 ## Citation
 
-If you use this codebase or methodology in your research, please cite:
+If you use this codebase or methodology in your research, please cite our preprint ([arXiv:2610.14093](http://arxiv.org/abs/2610.14093)):
 
 ```bibtex
-@misc{reina2026probabilistic,
-  title        = {Human Pose Estimation by Probabilistic Mixtures of Gaussian and Uniform Distributions},
-  author       = {Reina-Alguacil, Santiago and L{\'o}pez-Rubio, Ezequiel},
-  year         = {2026},
-  howpublished = {\url{https://github.com/santiago-git19/probabilistic-pose-gmm}},
-  note         = {Department of Computer Languages and Computer Science, University of M{\'a}laga. Preprint}
+@article{reina2026probabilistic,
+  title         = {Human Pose Estimation by Probabilistic Mixtures of Gaussian and Uniform Distributions},
+  author        = {Reina-Alguacil, Santiago and L{\'o}pez-Rubio, Ezequiel},
+  year          = {2026},
+  eprint        = {2610.14093},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.CV},
+  url           = {http://arxiv.org/abs/2610.14093}
 }
 ```
 
